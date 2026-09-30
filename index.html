@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="Ikris Pharma Network internal Department Inquiry Dashboard">
+  <title>Department Inquiry Dashboard · Ikris Pharma Network</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23172A5C'/%3E%3Cpath d='M13 8h6v5h5v6h-5v5h-6v-5H8v-6h5z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ============ ICON SPRITE ============ -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-grid" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M4 4h6.5v6.5H4zM13.5 4H20v6.5h-6.5zM4 13.5h6.5V20H4zM13.5 13.5H20V20h-6.5z"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 20h16M7 16v-5M12 16V7M17 16v-8"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></g></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></g></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></g></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m8 9 4-4 4 4M16 15l-4 4-4-4"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></g></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/></symbol>
+    <symbol id="i-sheet" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M5 3h14v18H5zM5 9h14M5 15h14M11 9v12"/></symbol>
+    <symbol id="i-pulse" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l2.5-6 5 12 2.5-6h4"/></symbol>
+    <symbol id="i-mark" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="currentColor"/><path d="M13 8h6v5h5v6h-5v5h-6v-5H8v-6h5z" fill="#fff"/></symbol>
+  </svg>
+
+  <!-- ============ BOOT SPLASH ============ -->
+  <div id="boot" class="boot" role="status" aria-live="polite">
+    <svg class="boot__mark" aria-hidden="true"><use href="#i-mark"/></svg>
+    <span class="spinner" aria-hidden="true"></span>
+    <span class="sr-only">Loading Ikris Pharma Network dashboard…</span>
+  </div>
+
+  <!-- ============ AUTHENTICATION ============ -->
+  <main id="auth-view" class="auth" hidden>
+    <section class="auth__brand" aria-label="Ikris Pharma Network">
+      <div class="brand brand--light">
+        <svg class="brand__mark" aria-hidden="true"><use href="#i-mark"/></svg>
+        <span class="brand__name">IKRIS PHARMA NETWORK</span>
+      </div>
+
+      <div class="auth__intro">
+        <p class="eyebrow">Internal Operations Portal</p>
+        <h1>Department Inquiry Dashboard</h1>
+        <p class="auth__lead">A single, secure view of every department inquiry raised through Ikris channels — live from the operations sheet, for authorised staff only.</p>
+        <ul class="auth__points">
+          <li><svg aria-hidden="true"><use href="#i-pulse"/></svg><span><strong>Live inquiry feed</strong> refreshed every 30 seconds</span></li>
+          <li><svg aria-hidden="true"><use href="#i-bell"/></svg><span><strong>New inquiry alerts</strong> as soon as they are logged</span></li>
+          <li><svg aria-hidden="true"><use href="#i-shield"/></svg><span><strong>Secure sign-in</strong> — data is never public</span></li>
+        </ul>
+      </div>
+
+      <p class="auth__foot">© <span data-year></span> Ikris Pharma Network · For internal use only</p>
+    </section>
+
+    <section class="auth__panel">
+      <div class="auth__card">
+        <div class="brand brand--compact">
+          <svg class="brand__mark" aria-hidden="true"><use href="#i-mark"/></svg>
+          <span class="brand__name">IKRIS PHARMA NETWORK</span>
+        </div>
+
+        <div id="auth-message" class="notice" role="alert" hidden></div>
+
+        <!-- Login -->
+        <form id="form-login" class="auth-form" data-auth-panel="login" novalidate>
+          <header class="auth-form__head">
+            <h2>Sign in</h2>
+            <p>Use your Ikris account to access the dashboard.</p>
+          </header>
+          <div class="field">
+            <label for="login-email">Email address</label>
+            <input id="login-email" name="email" type="email" autocomplete="email" inputmode="email" required>
+          </div>
+          <div class="field">
+            <div class="field__row">
+              <label for="login-password">Password</label>
+              <button type="button" class="link" data-go="forgot">Forgot password?</button>
+            </div>
+            <div class="password">
+              <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+              <button type="button" class="password__toggle" data-toggle-password aria-label="Show password" aria-pressed="false">
+                <svg aria-hidden="true"><use href="#i-eye"/></svg>
+              </button>
+            </div>
+          </div>
+          <button type="submit" class="btn btn--primary btn--block"><span class="btn__label">Sign in</span></button>
+          <p class="auth-form__switch">New to the dashboard? <button type="button" class="link" data-go="register">Create account</button></p>
+        </form>
+
+        <!-- Register -->
+        <form id="form-register" class="auth-form" data-auth-panel="register" novalidate hidden>
+          <header class="auth-form__head">
+            <h2>Create account</h2>
+            <p>Register with your work email. You will receive a verification email.</p>
+          </header>
+          <div class="field">
+            <label for="reg-email">Email address</label>
+            <input id="reg-email" name="email" type="email" autocomplete="email" inputmode="email" required>
+          </div>
+          <div class="field">
+            <label for="reg-password">Password</label>
+            <div class="password">
+              <input id="reg-password" name="password" type="password" autocomplete="new-password" required aria-describedby="reg-password-hint">
+              <button type="button" class="password__toggle" data-toggle-password aria-label="Show password" aria-pressed="false">
+                <svg aria-hidden="true"><use href="#i-eye"/></svg>
+              </button>
+            </div>
+            <p id="reg-password-hint" class="field__hint">At least <span data-min-pass>8</span> characters.</p>
+          </div>
+          <div class="field">
+            <label for="reg-confirm">Confirm password</label>
+            <input id="reg-confirm" name="confirm" type="password" autocomplete="new-password" required>
+          </div>
+          <button type="submit" class="btn btn--primary btn--block"><span class="btn__label">Create Account</span></button>
+          <p class="auth-form__switch">Already have an account? <button type="button" class="link" data-go="login">Login</button></p>
+        </form>
+
+        <!-- Forgot password -->
+        <form id="form-forgot" class="auth-form" data-auth-panel="forgot" novalidate hidden>
+          <header class="auth-form__head">
+            <h2>Reset password</h2>
+            <p>Enter your account email and we will send you a secure reset link.</p>
+          </header>
+          <div class="field">
+            <label for="forgot-email">Email address</label>
+            <input id="forgot-email" name="email" type="email" autocomplete="email" inputmode="email" required>
+          </div>
+          <button type="submit" class="btn btn--primary btn--block"><span class="btn__label">Send reset link</span></button>
+          <p class="auth-form__switch"><button type="button" class="link" data-go="login">Back to sign in</button></p>
+        </form>
+
+        <!-- Set new password (after clicking the email link) -->
+        <form id="form-update-password" class="auth-form" data-auth-panel="update" novalidate hidden>
+          <header class="auth-form__head">
+            <h2>Choose a new password</h2>
+            <p>Your reset link is verified. Set a new password for your account.</p>
+          </header>
+          <div class="field">
+            <label for="new-password">New password</label>
+            <div class="password">
+              <input id="new-password" name="password" type="password" autocomplete="new-password" required>
+              <button type="button" class="password__toggle" data-toggle-password aria-label="Show password" aria-pressed="false">
+                <svg aria-hidden="true"><use href="#i-eye"/></svg>
+              </button>
+            </div>
+            <p class="field__hint">At least <span data-min-pass>8</span> characters.</p>
+          </div>
+          <div class="field">
+            <label for="new-confirm">Confirm new password</label>
+            <input id="new-confirm" name="confirm" type="password" autocomplete="new-password" required>
+          </div>
+          <button type="submit" class="btn btn--primary btn--block"><span class="btn__label">Update password</span></button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ DASHBOARD SHELL ============ -->
+  <div id="app-view" class="shell" hidden>
+    <aside id="sidebar" class="sidebar" aria-label="Main navigation">
+      <div class="sidebar__brand">
+        <div class="brand brand--light">
+          <svg class="brand__mark" aria-hidden="true"><use href="#i-mark"/></svg>
+          <span class="brand__name">IKRIS PHARMA<br>NETWORK</span>
+        </div>
+        <button type="button" class="icon-btn sidebar__close" data-close-sidebar aria-label="Close navigation">
+          <svg aria-hidden="true"><use href="#i-close"/></svg>
+        </button>
+      </div>
+
+      <nav class="nav">
+        <p class="nav__label">Operations</p>
+        <button type="button" class="nav__item" data-nav="dashboard" aria-current="page"><svg aria-hidden="true"><use href="#i-grid"/></svg>Dashboard</button>
+        <button type="button" class="nav__item" data-nav="inquiries"><svg aria-hidden="true"><use href="#i-list"/></svg>Department Inquiries<span class="nav__badge" data-new-count hidden></span></button>
+        <button type="button" class="nav__item" data-nav="analytics"><svg aria-hidden="true"><use href="#i-chart"/></svg>Analytics</button>
+        <p class="nav__label">Account</p>
+        <button type="button" class="nav__item" data-nav="settings"><svg aria-hidden="true"><use href="#i-settings"/></svg>Settings</button>
+        <button type="button" class="nav__item" data-action="logout"><svg aria-hidden="true"><use href="#i-logout"/></svg>Logout</button>
+      </nav>
+
+      <div class="sidebar__foot">
+        <p class="sidebar__source"><svg aria-hidden="true"><use href="#i-sheet"/></svg>Source: <span data-sheet-name>department_inquery</span></p>
+        <p class="sidebar__version">Read-only · v1.0</p>
+      </div>
+    </aside>
+    <div class="scrim" data-close-sidebar hidden></div>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="topbar__left">
+          <button type="button" class="icon-btn topbar__menu" data-open-sidebar aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">
+            <svg aria-hidden="true"><use href="#i-menu"/></svg>
+          </button>
+          <div class="topbar__titles">
+            <p class="topbar__org">IKRIS PHARMA NETWORK</p>
+            <h1 class="topbar__title" id="page-title">Department Inquiry Dashboard</h1>
+          </div>
+        </div>
+        <div class="topbar__right">
+          <div class="live" id="live-status" data-state="idle" aria-live="polite">
+            <span class="live__dot" aria-hidden="true"></span>
+            <span class="live__label">Live</span>
+            <span class="live__time">Last updated: <time id="last-updated">—</time></span>
+          </div>
+          <button type="button" class="btn btn--ghost btn--sm" id="btn-refresh" aria-label="Refresh inquiry data">
+            <svg aria-hidden="true"><use href="#i-refresh"/></svg><span class="hide-sm">Refresh</span>
+          </button>
+          <div class="user">
+            <span class="user__avatar" aria-hidden="true" data-user-initial>?</span>
+            <span class="user__email" data-user-email></span>
+          </div>
+          <button type="button" class="btn btn--outline btn--sm" data-action="logout">
+            <svg aria-hidden="true"><use href="#i-logout"/></svg><span class="hide-sm">Logout</span>
+          </button>
+        </div>
+      </header>
+
+      <div id="data-banner" class="banner" role="alert" hidden>
+        <svg aria-hidden="true"><use href="#i-alert"/></svg>
+        <span class="banner__text"></span>
+        <button type="button" class="btn btn--sm btn--outline" data-action="retry">Try again</button>
+      </div>
+
+      <main class="content" id="content" tabindex="-1">
+
+        <!-- ===== VIEW: DASHBOARD ===== -->
+        <section class="view" data-view="dashboard" aria-labelledby="page-title">
+          <div class="kpis" id="kpis" aria-live="polite"></div>
+
+          <div class="grid grid--dash">
+            <section class="card" aria-labelledby="dept-heading">
+              <header class="card__head">
+                <div>
+                  <h2 id="dept-heading">Department summary</h2>
+                  <p class="card__sub">Select a department to view its inquiries</p>
+                </div>
+              </header>
+              <div class="dept-grid" id="dept-cards"></div>
+            </section>
+
+            <section class="card" aria-labelledby="recent-heading">
+              <header class="card__head">
+                <div>
+                  <h2 id="recent-heading">Latest inquiries</h2>
+                  <p class="card__sub">Most recently raised</p>
+                </div>
+                <button type="button" class="link" data-nav="inquiries">View all</button>
+              </header>
+              <ul class="recent" id="recent-list"></ul>
+            </section>
+          </div>
+
+          <section class="card" aria-labelledby="trend-heading">
+            <header class="card__head">
+              <div>
+                <h2 id="trend-heading">Inquiry trend</h2>
+                <p class="card__sub">Inquiries per day, last 30 days</p>
+              </div>
+            </header>
+            <div class="chart chart--wide"><canvas id="chart-trend-mini" role="img" aria-label="Inquiries per day over the last 30 days"></canvas></div>
+          </section>
+        </section>
+
+        <!-- ===== VIEW: INQUIRIES ===== -->
+        <section class="view" data-view="inquiries" hidden>
+          <section class="card card--flush">
+            <div class="toolbar">
+              <div class="search">
+                <svg aria-hidden="true"><use href="#i-search"/></svg>
+                <label for="search" class="sr-only">Search inquiries</label>
+                <input id="search" type="search" placeholder="Search ID, name, country, department, medicine…" autocomplete="off">
+              </div>
+              <div class="filters" id="filters">
+                <div class="filter" data-filter-wrap="department">
+                  <label for="f-department">Department</label>
+                  <select id="f-department" data-filter="department"><option value="">All departments</option></select>
+                </div>
+                <div class="filter" data-filter-wrap="country">
+                  <label for="f-country">Country</label>
+                  <select id="f-country" data-filter="country"><option value="">All countries</option></select>
+                </div>
+                <div class="filter" data-filter-wrap="status">
+                  <label for="f-status">Status</label>
+                  <select id="f-status" data-filter="status"><option value="">All statuses</option></select>
+                </div>
+                <div class="filter filter--date" data-filter-wrap="date">
+                  <label for="f-from">From</label>
+                  <input id="f-from" type="date" data-filter="from">
+                </div>
+                <div class="filter filter--date" data-filter-wrap="date">
+                  <label for="f-to">To</label>
+                  <input id="f-to" type="date" data-filter="to">
+                </div>
+                <button type="button" class="btn btn--ghost btn--sm filters__clear" id="btn-clear-filters">Clear</button>
+              </div>
+            </div>
+
+            <div class="table-meta">
+              <p id="result-count" aria-live="polite"></p>
+              <div class="chips" id="active-chips"></div>
+            </div>
+
+            <div class="table-wrap" tabindex="0" aria-label="Inquiry table, scrollable">
+              <table class="table" id="inquiry-table">
+                <thead><tr id="table-head"></tr></thead>
+                <tbody id="table-body"></tbody>
+              </table>
+              <div class="empty" id="table-empty" hidden></div>
+            </div>
+
+            <nav class="pager" aria-label="Table pagination">
+              <div class="pager__size">
+                <label for="page-size">Rows</label>
+                <select id="page-size"><option>10</option><option>25</option><option>50</option><option>100</option></select>
+              </div>
+              <p class="pager__info" id="page-info"></p>
+              <div class="pager__btns" id="pager-btns"></div>
+            </nav>
+          </section>
+        </section>
+
+        <!-- ===== VIEW: ANALYTICS ===== -->
+        <section class="view" data-view="analytics" hidden>
+          <div class="grid grid--charts">
+            <section class="card card--span">
+              <header class="card__head"><div><h2>Inquiry trend over time</h2><p class="card__sub">Daily inquiries, last 30 days</p></div></header>
+              <div class="chart chart--wide"><canvas id="chart-trend" role="img" aria-label="Inquiry trend over time"></canvas></div>
+            </section>
+            <section class="card">
+              <header class="card__head"><div><h2>Inquiries by department</h2><p class="card__sub">All time</p></div></header>
+              <div class="chart"><canvas id="chart-department" role="img" aria-label="Inquiries by department"></canvas></div>
+            </section>
+            <section class="card">
+              <header class="card__head"><div><h2>Inquiries by country</h2><p class="card__sub">Top 10 countries</p></div></header>
+              <div class="chart"><canvas id="chart-country" role="img" aria-label="Inquiries by country"></canvas></div>
+            </section>
+            <section class="card" id="status-chart-card">
+              <header class="card__head"><div><h2>Status distribution</h2><p class="card__sub">Current status of all inquiries</p></div></header>
+              <div class="chart"><canvas id="chart-status" role="img" aria-label="Inquiry status distribution"></canvas></div>
+            </section>
+            <section class="card" id="assignee-chart-card">
+              <header class="card__head"><div><h2>Open workload by assignee</h2><p class="card__sub">Inquiries not yet completed</p></div></header>
+              <div class="chart"><canvas id="chart-assignee" role="img" aria-label="Open inquiries by assignee"></canvas></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ===== VIEW: SETTINGS ===== -->
+        <section class="view" data-view="settings" hidden>
+          <div class="grid grid--settings">
+            <section class="card">
+              <header class="card__head"><div><h2>Account</h2><p class="card__sub">Signed in with Supabase Authentication</p></div></header>
+              <dl class="kv">
+                <div><dt>Email</dt><dd data-user-email></dd></div>
+                <div><dt>Access</dt><dd>Read-only inquiry dashboard</dd></div>
+              </dl>
+              <div class="card__actions">
+                <button type="button" class="btn btn--outline btn--sm" data-action="logout"><svg aria-hidden="true"><use href="#i-logout"/></svg>Logout</button>
+              </div>
+            </section>
+            <section class="card">
+              <header class="card__head"><div><h2>Data source</h2><p class="card__sub">Google Sheet via Apps Script</p></div></header>
+              <dl class="kv" id="source-info"></dl>
+            </section>
+            <section class="card card--span">
+              <header class="card__head"><div><h2>Detected columns</h2><p class="card__sub">Read dynamically from row 1 of the sheet. New columns appear automatically.</p></div></header>
+              <div class="chips chips--wrap" id="column-chips"></div>
+              <p class="muted small" id="column-note"></p>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- ============ DETAILS DRAWER ============ -->
+  <div class="drawer-scrim" id="drawer-scrim" hidden></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" hidden>
+    <header class="drawer__head">
+      <div>
+        <p class="eyebrow eyebrow--dark">Inquiry Details</p>
+        <h2 id="drawer-title" class="drawer__title mono"></h2>
+        <div class="drawer__meta" id="drawer-meta"></div>
+      </div>
+      <button type="button" class="icon-btn" id="drawer-close" aria-label="Close inquiry details">
+        <svg aria-hidden="true"><use href="#i-close"/></svg>
+      </button>
+    </header>
+    <div class="drawer__body">
+      <dl class="details" id="drawer-fields"></dl>
+    </div>
+    <footer class="drawer__foot">
+      <span class="muted small" id="drawer-row"></span>
+      <button type="button" class="btn btn--outline btn--sm" id="drawer-close-2">Close</button>
+    </footer>
+  </aside>
+
+  <!-- ============ TOASTS ============ -->
+  <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+  <!-- Configuration first, then libraries, then the app -->
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
