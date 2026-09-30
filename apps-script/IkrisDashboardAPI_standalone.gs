@@ -1,8 +1,14 @@
 /**
+ * IKRIS DASHBOARD API — STANDALONE VERSION (one file, copy-paste ready)
+ * Paste this whole file into a NEW, separate Apps Script project (script.google.com → New project).
+ * It is completely separate from the Apps Script attached to your sheet, so your existing
+ * chatbot / email automation is not touched. It only READS the department_inquery tab.
+ */
+
+/**
  * =====================================================================
  *  IKRIS PHARMA NETWORK — Department Inquiry Dashboard API
- *  File: DashboardAPI.gs   (ADD this as a NEW file in your Apps Script
- *                            project — do not replace Code.gs)
+ *  Standalone project — the only file in "Ikris Dashboard API"
  * =====================================================================
  *
  *  What this file does
@@ -29,8 +35,7 @@
  *
  *  doGet()
  *  -------
- *  This file does NOT declare doGet(), so it can never create a duplicate.
- *  See the bottom of this file (and README.md) for the 3-line merge.
+ *  Declared at the bottom of this file (standalone project only).
  *
  *  Script Properties (Project Settings → Script Properties)
  *  --------------------------------------------------------
@@ -355,25 +360,10 @@ function dashboardSelfTest() {
   console.log('Allowed email domains: ' + (domains === null ? DASHBOARD_CONFIG.DEFAULT_ALLOWED_DOMAINS : domains));
 }
 
-/* =====================================================================
- *  HOW TO CONNECT THIS TO doGet()
- * =====================================================================
- *
- *  CASE A — Your project ALREADY has a doGet(e) (in Code.gs or elsewhere):
- *  Add these two lines as the FIRST lines inside it. Leave the rest alone.
- *
- *    function doGet(e) {
- *      if (isDashboardRequest(e)) return handleDashboardRequest(e);   // ← add
- *      // ... your existing doGet code continues unchanged ...
- *    }
- *
- *  CASE B — Your project has NO doGet anywhere (search all files for "doGet"):
- *  Create a new file DashboardRouter.gs containing exactly:
- *
- *    function doGet(e) {
- *      if (isDashboardRequest(e)) return handleDashboardRequest(e);
- *      return dashboardJsonResponse({ ok: false, error: { code: 'NOT_FOUND', message: 'Unknown request.' } });
- *    }
- *
- *  doPost() (if your automation uses one) is not affected.
- * ===================================================================== */
+/* ------------------------------------------------------------------ */
+/*  Web App entry point (standalone project only)                      */
+/* ------------------------------------------------------------------ */
+function doGet(e) {
+  if (isDashboardRequest(e)) return handleDashboardRequest(e);
+  return dashboardJsonResponse({ ok: false, error: { code: 'NOT_FOUND', message: 'Unknown request.' } });
+}

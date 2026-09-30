@@ -63,6 +63,16 @@ Why the data stays protected:
 
 ## 3. Google Apps Script setup (backend)
 
+### 3.0 Recommended: separate standalone project (zero changes to your sheet's script)
+1. Open **https://script.google.com** → **New project**. Rename it `Ikris Dashboard API`.
+2. Replace everything in `Code.gs` with the full contents of `apps-script/IkrisDashboardAPI_standalone.gs` → **Save**.
+3. Choose `dashboardSelfTest` in the function dropdown → **Run** → approve access. The log lists the sheet headers.
+4. **Deploy → New deployment → Web app** · Execute as **Me** · Who has access **Anyone** → **Deploy** → copy the `/exec` URL into `config.js`.
+
+No Script Properties are needed: the public Supabase values and the default allowed domain (`ikrispharmanetwork.com`) are built in. (Optional: in Project Settings tick "Show appsscript.json" and replace it with `apps-script/appsscript.json` to limit the script to **read-only** spreadsheet access.)
+
+Sections 3.1–3.5 below are the alternative: adding the API into the Apps Script already attached to the sheet.
+
 Your existing email/inquiry automation is **not changed or deleted**. You only add one file and, if needed, two lines to `doGet`.
 
 ### 3.1 Add the dashboard file
