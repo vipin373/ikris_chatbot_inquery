@@ -22,7 +22,7 @@ window.IKRIS_CONFIG = Object.freeze({
   // Public URL of this dashboard, used for email confirmation + password reset links.
   // Leave empty to use the current page address automatically.
   // Example: 'https://USERNAME.github.io/REPOSITORY/'
-  APP_URL: '',
+  APP_URL: 'https://vipin373.github.io/ikris_chatbot_inquery/',
 
   // Live refresh interval (milliseconds). 30 seconds by default.
   REFRESH_INTERVAL_MS: 30000,
