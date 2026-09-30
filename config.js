@@ -17,7 +17,7 @@ window.IKRIS_CONFIG = Object.freeze({
   SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_VpQjX0Y7Fh6PGrx0TmlAQA_dQ6t8xPf',
 
   // Paste your Apps Script Web App URL here after deploying (ends with /exec).
-  GOOGLE_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/DEPLOYMENT_ID/exec',
+  GOOGLE_APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycby2Jfb9REtb89dYxSqDO_DgQ1Bm0GDaklhdC8xi0rFnnW_VJXh_DPwr6fJt5Os0IB0eMg/exec',
 
   // Public URL of this dashboard, used for email confirmation + password reset links.
   // Leave empty to use the current page address automatically.
