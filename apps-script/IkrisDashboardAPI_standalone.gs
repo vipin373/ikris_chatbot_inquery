@@ -1,125 +1,157 @@
 /**
  * IKRIS DASHBOARD API — STANDALONE VERSION (one file, copy-paste ready)
- * Paste this whole file into a NEW, separate Apps Script project (script.google.com → New project).
- * It is completely separate from the Apps Script attached to your sheet, so your existing
- * chatbot / email automation is not touched. It only READS the department_inquery tab.
+ * Paste this whole file into your standalone Apps Script project, replacing the old code.
+ * It is separate from the Apps Script attached to your sheet, so your chatbot / email
+ * automation is not touched. It reads department_inquery and, when a ticket is closed,
+ * changes only that row's Status cell.
  */
 
 /**
  * =====================================================================
- *  IKRIS PHARMA NETWORK — Department Inquiry Dashboard API
- *  Standalone project — the only file in "Ikris Dashboard API"
+ *  IKRIS PHARMA NETWORK — Department Inquiry Dashboard API  (v2)
  * =====================================================================
  *
- *  What this file does
+ *  What this code does
  *  -------------------
- *  • Exposes a READ-ONLY JSON endpoint for the dashboard.
- *  • Reads ONLY the "department_inquery" tab. No other tab is touched.
- *  • Every request must carry a valid Supabase access token. The token is
- *    verified server-side against Supabase Auth (GET /auth/v1/user) before
- *    any sheet data is returned.
- *  • The Google Sheet itself stays private. The web app runs as YOU, so
- *    no Google credentials ever reach the browser.
+ *  • Serves inquiry data from the "department_inquery" tab ONLY.
+ *  • Every request must carry a valid Supabase access token, verified
+ *    server-side with Supabase Auth (GET /auth/v1/user).
+ *  • ROLE-BASED ACCESS (see DASHBOARD_ACCESS below):
+ *      - Admins see every inquiry.
+ *      - Department users see ONLY inquiries of their own department.
+ *        Filtering happens here on the server, so other departments'
+ *        data never reaches their browser.
+ *      - Any other signed-in account gets "not authorised".
+ *  • CLOSE TICKET: an admin, or the user of that inquiry's department, can
+ *    close a ticket. The ONLY cell changed is that row's "Status" cell
+ *    (e.g. New → Done). Optional "Closed By" / "Closed At" columns are
+ *    filled only if such columns already exist. Nothing else in the sheet
+ *    is ever modified, and no other tab is opened.
  *
- *  Naming
- *  ------
- *  All helpers are prefixed with "dashboard" so they cannot collide with
- *  functions in your existing email/inquiry automation (e.g. an existing
- *  jsonResponse() or formatDate()). The equivalents of the requested names:
- *
- *    doGet()                  -> routed via handleDashboardRequest(e)
- *    getDepartmentInquiries() -> getDepartmentInquiries()
- *    jsonResponse()           -> dashboardJsonResponse()
- *    formatDate()             -> dashboardFormatDate()
- *    validateRequest()        -> dashboardValidateRequest()
- *
- *  doGet()
- *  -------
- *  Declared at the bottom of this file (standalone project only).
- *
- *  Script Properties (Project Settings → Script Properties)
- *  --------------------------------------------------------
- *  All optional — defaults are in DASHBOARD_CONFIG below.
- *    SUPABASE_URL              https://mdyniigwwhupdnxwtnvo.supabase.co
- *    SUPABASE_PUBLISHABLE_KEY  sb_publishable_...   (public key, NOT service_role)
- *    DASHBOARD_ALLOWED_DOMAINS default "ikrispharmanetwork.com". Comma-separated;
- *                              only users whose email is on one of these domains
- *                              get data. Set to "*" to allow any verified user.
+ *  Script Properties (optional)
+ *  ----------------------------
+ *    SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY   override the built-in public values
+ *    DASHBOARD_ACCESS_JSON  override DASHBOARD_ACCESS without editing code, e.g.
+ *      {"admins":["vipin@ikrispharmanetwork.com"],
+ *       "departments":{"qa@ikrispharmanetwork.com":["Quality Assurance"]}}
  * =====================================================================
  */
 
 var DASHBOARD_CONFIG = {
   SPREADSHEET_ID: '1JWgKel_MnCtZKnm4s-knliTYyVzRBITfs7wxlL9JQtU',
-  SHEET_NAME: 'department_inquery',          // the ONLY tab this API reads
+  SHEET_NAME: 'department_inquery',          // the ONLY tab this API touches
   ACTIONS: {
-    INQUIRIES: 'dashboard_inquiries',         // authenticated data request
-    PING: 'dashboard_ping'                    // unauthenticated health check (returns no data)
+    INQUIRIES: 'dashboard_inquiries',         // authenticated, read
+    CLOSE: 'dashboard_close_ticket',          // authenticated, sets Status → Done
+    PING: 'dashboard_ping'                    // unauthenticated health check (no data)
   },
-  TOKEN_CACHE_SECONDS: 300,                   // cache verified tokens for up to 5 min
-  API_VERSION: '1.1.0',
+  CLOSED_STATUS_VALUE: 'Done',                // value written when a ticket is closed
+  TOKEN_CACHE_SECONDS: 300,
+  API_VERSION: '2.0.0',
 
   // Public Supabase values (safe to embed; Script Properties override them if set).
   SUPABASE_URL: 'https://mdyniigwwhupdnxwtnvo.supabase.co',
-  SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_VpQjX0Y7Fh6PGrx0TmlAQA_dQ6t8xPf',
-  // Only these email domains receive data. Override with the DASHBOARD_ALLOWED_DOMAINS
-  // Script Property (set it to "*" to allow any verified Supabase user).
-  DEFAULT_ALLOWED_DOMAINS: 'ikrispharmanetwork.com'
+  SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_VpQjX0Y7Fh6PGrx0TmlAQA_dQ6t8xPf'
+};
+
+/**
+ * WHO CAN SEE WHAT.
+ * Emails are case-insensitive. Department names are matched against the
+ * sheet's "Department" column ignoring case, spaces and punctuation, so
+ * "General / Other/Hr" also matches "general/other/HR".
+ * List several names for one user if the sheet uses more than one spelling.
+ */
+var DASHBOARD_ACCESS = {
+  admins: [
+    'vipin@ikrispharmanetwork.com',
+    'bharat@ikrispharmanetwork.com'
+  ],
+  departments: {
+    'marketing@ikrispharmanetwork.com':  ['IT / Technical Support'],
+    'sneha@ikrispharmanetwork.com':      ['Rare Disease'],
+    'ankita@ikrispharmanetwork.com':     ['Clinical Trial / RLD'],
+    'operations@ikrispharmanetwork.com': ['Pharmaceutical Export / Procurement'],
+    'maneesha@ikrispharmanetwork.com':   ['Real-World Data / Market Access'],
+    'shilpi@ikrispharmanetwork.com':     ['Export'],
+    'vipin20mar@gmail.com':              ['General / Other/Hr'],
+    'accounts@ikrispharmanetwork.com':   ['Account Teams'],
+    'qa@ikrispharmanetwork.com':         ['Quality Assurance'],
+    'vipindubey2032001@gmail.com':       ['Import/NPP', 'Import', 'NPP']
+  }
 };
 
 /* ------------------------------------------------------------------ */
 /*  Routing                                                            */
 /* ------------------------------------------------------------------ */
 
-/**
- * Returns true when a GET request is meant for the dashboard.
- * Use this at the very top of your existing doGet(e).
- */
+/** True when a GET request is meant for the dashboard. */
 function isDashboardRequest(e) {
   var action = e && e.parameter && e.parameter.action;
-  if (!action) return false;
-  var actions = DASHBOARD_CONFIG.ACTIONS;
-  return action === actions.INQUIRIES || action === actions.PING;
+  var a = DASHBOARD_CONFIG.ACTIONS;
+  return action === a.INQUIRIES || action === a.PING;
 }
 
-/**
- * Main dashboard handler. Always returns a JSON TextOutput and never throws.
- */
+/** True when a POST request is meant for the dashboard (JSON body with a dashboard action). */
+function isDashboardPost(e) {
+  var body = dashboardParseBody(e);
+  return !!(body && body.action === DASHBOARD_CONFIG.ACTIONS.CLOSE);
+}
+
+/** GET handler — always returns JSON, never throws. */
 function handleDashboardRequest(e) {
   try {
-    var action = e.parameter.action;
-
-    if (action === DASHBOARD_CONFIG.ACTIONS.PING) {
+    if (e.parameter.action === DASHBOARD_CONFIG.ACTIONS.PING) {
       return dashboardJsonResponse({
         ok: true,
         data: { service: 'ikris-dashboard-api', version: DASHBOARD_CONFIG.API_VERSION, time: new Date().toISOString() }
       });
     }
-
-    var user = dashboardValidateRequest(e);          // throws on invalid/expired token
-    var data = getDepartmentInquiries();             // throws on sheet problems
-    return dashboardJsonResponse({ ok: true, user: { email: user.email }, data: data });
-
+    var user = dashboardValidateRequest(e.parameter.token);
+    var access = dashboardResolveAccess(user.email);
+    var data = getDepartmentInquiries(access);
+    return dashboardJsonResponse({ ok: true, user: dashboardPublicUser(user, access), data: data });
   } catch (err) {
     return dashboardErrorResponse(err);
   }
 }
 
+/** POST handler (close ticket) — always returns JSON, never throws. */
+function handleDashboardPost(e) {
+  try {
+    var body = dashboardParseBody(e);
+    if (!body || body.action !== DASHBOARD_CONFIG.ACTIONS.CLOSE) {
+      throw dashboardError('BAD_REQUEST', 'Unknown request.');
+    }
+    var user = dashboardValidateRequest(body.token);
+    var access = dashboardResolveAccess(user.email);
+    var result = closeDepartmentInquiry(access, user, String(body.inquiryId || ''), Number(body.row) || 0);
+    return dashboardJsonResponse({ ok: true, user: dashboardPublicUser(user, access), data: result });
+  } catch (err) {
+    return dashboardErrorResponse(err);
+  }
+}
+
+function dashboardParseBody(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) return null;
+    return JSON.parse(e.postData.contents);
+  } catch (err) {
+    return null;
+  }
+}
+
 /* ------------------------------------------------------------------ */
-/*  Authentication (Supabase access-token verification)                */
+/*  Authentication & access                                            */
 /* ------------------------------------------------------------------ */
 
-/**
- * Validates the request's Supabase access token and returns { id, email }.
- * Throws a dashboard error with code UNAUTHORIZED / FORBIDDEN / CONFIG_ERROR.
- */
-function dashboardValidateRequest(e) {
-  var token = (e.parameter.token || '').trim();
+/** Verifies a Supabase access token and returns { id, email }. */
+function dashboardValidateRequest(token) {
+  token = String(token || '').trim();
   if (!token) throw dashboardError('UNAUTHORIZED', 'Missing session token.');
 
   var parts = token.split('.');
   if (parts.length !== 3) throw dashboardError('UNAUTHORIZED', 'Malformed session token.');
 
-  // Cheap local pre-checks before calling Supabase: expiry + issuer.
   var payload = dashboardDecodeJwtPayload(parts[1]);
   var nowSec = Math.floor(Date.now() / 1000);
   if (!payload || !payload.exp || payload.exp <= nowSec) {
@@ -130,61 +162,81 @@ function dashboardValidateRequest(e) {
   var supabaseUrl = (props.getProperty('SUPABASE_URL') || DASHBOARD_CONFIG.SUPABASE_URL || '').replace(/\/+$/, '');
   var supabaseKey = props.getProperty('SUPABASE_PUBLISHABLE_KEY') || DASHBOARD_CONFIG.SUPABASE_PUBLISHABLE_KEY || '';
   if (!supabaseUrl || !supabaseKey) {
-    throw dashboardError('CONFIG_ERROR', 'Dashboard API is not configured (Supabase script properties missing).');
+    throw dashboardError('CONFIG_ERROR', 'Dashboard API is not configured (Supabase values missing).');
   }
   if (payload.iss && String(payload.iss).indexOf(supabaseUrl) !== 0) {
     throw dashboardError('UNAUTHORIZED', 'Token was not issued by the configured Supabase project.');
   }
 
-  // Cache successful verifications so 30-second polling does not hit Supabase every time.
   var cache = CacheService.getScriptCache();
   var cacheKey = 'dash_auth_' + dashboardSha256(token);
   var cached = cache.get(cacheKey);
-  var user = cached ? JSON.parse(cached) : null;
+  if (cached) return JSON.parse(cached);
 
-  if (!user) {
-    var res;
-    try {
-      res = UrlFetchApp.fetch(supabaseUrl + '/auth/v1/user', {
-        method: 'get',
-        headers: { Authorization: 'Bearer ' + token, apikey: supabaseKey },
-        muteHttpExceptions: true
-      });
-    } catch (fetchErr) {
-      console.error('Supabase verification request failed: ' + fetchErr);
-      throw dashboardError('AUTH_UNAVAILABLE', 'Could not verify your session right now. Please try again.');
-    }
-
-    var status = res.getResponseCode();
-    if (status === 401 || status === 403) throw dashboardError('UNAUTHORIZED', 'Session is not valid.');
-    if (status !== 200) {
-      console.error('Supabase verification HTTP ' + status + ': ' + res.getContentText().slice(0, 300));
-      throw dashboardError('AUTH_UNAVAILABLE', 'Could not verify your session right now. Please try again.');
-    }
-
-    var body = JSON.parse(res.getContentText());
-    if (!body || !body.id || !body.email) throw dashboardError('UNAUTHORIZED', 'Session is not valid.');
-    user = { id: body.id, email: String(body.email).toLowerCase() };
-
-    var ttl = Math.min(DASHBOARD_CONFIG.TOKEN_CACHE_SECONDS, payload.exp - nowSec - 5);
-    if (ttl > 0) cache.put(cacheKey, JSON.stringify(user), ttl);
+  var res;
+  try {
+    res = UrlFetchApp.fetch(supabaseUrl + '/auth/v1/user', {
+      method: 'get',
+      headers: { Authorization: 'Bearer ' + token, apikey: supabaseKey },
+      muteHttpExceptions: true
+    });
+  } catch (fetchErr) {
+    console.error('Supabase verification request failed: ' + fetchErr);
+    throw dashboardError('AUTH_UNAVAILABLE', 'Could not verify your session right now. Please try again.');
   }
 
-  // Optional: restrict access to company email domains.
-  var allowedSetting = props.getProperty('DASHBOARD_ALLOWED_DOMAINS');
-  if (allowedSetting === null) allowedSetting = DASHBOARD_CONFIG.DEFAULT_ALLOWED_DOMAINS;
-  if (String(allowedSetting).trim() === '*') allowedSetting = '';
-  var allowed = String(allowedSetting || '')
-    .split(',').map(function (d) { return d.trim().toLowerCase().replace(/^@/, ''); })
-    .filter(function (d) { return d; });
-  if (allowed.length) {
-    var domain = user.email.split('@')[1] || '';
-    if (allowed.indexOf(domain) === -1) {
-      throw dashboardError('FORBIDDEN', 'Your account is not authorised to view inquiry data.');
-    }
+  var status = res.getResponseCode();
+  if (status === 401 || status === 403) throw dashboardError('UNAUTHORIZED', 'Session is not valid.');
+  if (status !== 200) {
+    console.error('Supabase verification HTTP ' + status + ': ' + res.getContentText().slice(0, 300));
+    throw dashboardError('AUTH_UNAVAILABLE', 'Could not verify your session right now. Please try again.');
   }
 
+  var body = JSON.parse(res.getContentText());
+  if (!body || !body.id || !body.email) throw dashboardError('UNAUTHORIZED', 'Session is not valid.');
+  var user = { id: body.id, email: String(body.email).toLowerCase() };
+
+  var ttl = Math.min(DASHBOARD_CONFIG.TOKEN_CACHE_SECONDS, payload.exp - nowSec - 5);
+  if (ttl > 0) cache.put(cacheKey, JSON.stringify(user), ttl);
   return user;
+}
+
+/** Returns { role: 'admin'|'department', departments: [...] } or throws FORBIDDEN. */
+function dashboardResolveAccess(email) {
+  var cfg = DASHBOARD_ACCESS;
+  var override = PropertiesService.getScriptProperties().getProperty('DASHBOARD_ACCESS_JSON');
+  if (override) {
+    try { cfg = JSON.parse(override); } catch (err) { console.error('DASHBOARD_ACCESS_JSON is not valid JSON; using built-in access list.'); }
+  }
+  email = String(email || '').toLowerCase().trim();
+
+  var admins = (cfg.admins || []).map(function (a) { return String(a).toLowerCase().trim(); });
+  if (admins.indexOf(email) !== -1) return { role: 'admin', departments: [] };
+
+  var map = cfg.departments || {};
+  for (var key in map) {
+    if (Object.prototype.hasOwnProperty.call(map, key) && String(key).toLowerCase().trim() === email) {
+      var deps = [].concat(map[key]).map(String).filter(function (d) { return d.trim(); });
+      if (deps.length) return { role: 'department', departments: deps };
+    }
+  }
+  throw dashboardError('FORBIDDEN', 'Your account has not been given access to the inquiry dashboard. Please contact the administrator.');
+}
+
+function dashboardPublicUser(user, access) {
+  return { email: user.email, role: access.role, departments: access.departments };
+}
+
+/** "General / Other/Hr" → "generalotherhr" */
+function dashboardNormDept(value) {
+  return String(value == null ? '' : value).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function dashboardCanSeeDepartment(access, deptValue) {
+  if (access.role === 'admin') return true;
+  var d = dashboardNormDept(deptValue);
+  if (!d) return false;
+  return access.departments.some(function (x) { return dashboardNormDept(x) === d; });
 }
 
 function dashboardDecodeJwtPayload(segment) {
@@ -203,17 +255,10 @@ function dashboardSha256(text) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Data                                                               */
+/*  Sheet helpers                                                      */
 /* ------------------------------------------------------------------ */
 
-/**
- * Reads ALL headers and ALL non-empty rows from department_inquery.
- * Headers are taken dynamically from row 1, so new columns added to the
- * right of the sheet are returned automatically.
- *
- * Returns { sheet, headers[], rows[{ _row, <header>: <string value> }], rowCount, generatedAt, timezone }
- */
-function getDepartmentInquiries() {
+function dashboardOpenSheet() {
   var ss;
   try {
     ss = SpreadsheetApp.openById(DASHBOARD_CONFIG.SPREADSHEET_ID);
@@ -221,31 +266,62 @@ function getDepartmentInquiries() {
     console.error('openById failed: ' + err);
     throw dashboardError('SHEET_UNAVAILABLE', 'The inquiry spreadsheet could not be opened.');
   }
-
   var sheet = ss.getSheetByName(DASHBOARD_CONFIG.SHEET_NAME);
-  if (!sheet) {
-    throw dashboardError('SHEET_NOT_FOUND', 'The "' + DASHBOARD_CONFIG.SHEET_NAME + '" tab was not found.');
-  }
+  if (!sheet) throw dashboardError('SHEET_NOT_FOUND', 'The "' + DASHBOARD_CONFIG.SHEET_NAME + '" tab was not found.');
+  return { ss: ss, sheet: sheet, tz: ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone() };
+}
 
-  var tz = ss.getSpreadsheetTimeZone() || Session.getScriptTimeZone();
+/** Finds a column index (0-based) whose header matches the regex, or -1. */
+function dashboardFindColumn(rawHeaders, regex) {
+  for (var c = 0; c < rawHeaders.length; c++) {
+    if (regex.test(String(rawHeaders[c] || '').trim())) return c;
+  }
+  return -1;
+}
+
+var DASHBOARD_COLUMN_PATTERNS = {
+  id: /^(inquiry|inquery|enquiry|ticket)\s*(id|no|number)$/i,
+  department: /(department|dept)/i,
+  status: /status/i,
+  closedBy: /^closed\s*by$/i,
+  closedAt: /^closed\s*(at|on|date|time)$/i
+};
+
+/* ------------------------------------------------------------------ */
+/*  Read                                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Reads ALL headers and the rows this user may see from department_inquery.
+ * Headers come from row 1, so new columns appear automatically.
+ * Returns { sheet, headers[], rows[{ _row, <header>: <string> }], rowCount, generatedAt, timezone, scope }
+ */
+function getDepartmentInquiries(access) {
+  access = access || { role: 'admin', departments: [] };
+  var s = dashboardOpenSheet();
+  var sheet = s.sheet;
+  var tz = s.tz;
   var base = {
     sheet: DASHBOARD_CONFIG.SHEET_NAME,
     headers: [],
     rows: [],
     rowCount: 0,
     generatedAt: new Date().toISOString(),
-    timezone: tz
+    timezone: tz,
+    scope: access.role === 'admin' ? 'all' : access.departments
   };
 
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
-  if (lastRow < 1 || lastCol < 1) return base;            // completely empty tab
+  if (lastRow < 1 || lastCol < 1) return base;
 
   var values = sheet.getRange(1, 1, lastRow, lastCol).getValues();
   var rawHeaders = values[0];
+  var deptCol = dashboardFindColumn(rawHeaders, DASHBOARD_COLUMN_PATTERNS.department);
+  if (access.role !== 'admin' && deptCol === -1) {
+    throw dashboardError('MISSING_COLUMN', 'The sheet has no Department column, so department access cannot be applied.');
+  }
 
-  // Keep a column when it has a header OR any data; name blank headers "Column N";
-  // de-duplicate repeated header names ("Notes", "Notes (2)").
   var columns = [];
   var seen = {};
   for (var c = 0; c < lastCol; c++) {
@@ -272,9 +348,10 @@ function getDepartmentInquiries() {
     for (var k = 0; k < columns.length; k++) {
       if (!dashboardIsBlank(row[columns[k].index])) { isEmpty = false; break; }
     }
-    if (isEmpty) continue;                                 // skip empty rows safely
+    if (isEmpty) continue;
+    if (!dashboardCanSeeDepartment(access, deptCol === -1 ? '' : row[deptCol])) continue;   // server-side filter
 
-    var obj = { _row: i + 1 };                             // actual sheet row number
+    var obj = { _row: i + 1 };
     for (var j = 0; j < columns.length; j++) {
       obj[columns[j].name] = dashboardCellToString(row[columns[j].index], tz);
     }
@@ -287,39 +364,110 @@ function getDepartmentInquiries() {
   return base;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Write: close ticket (Status → Done)                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Sets the Status cell of ONE inquiry to CLOSED_STATUS_VALUE.
+ * The row is located by Inquiry ID (rowHint is only a fast-path and is re-verified).
+ */
+function closeDepartmentInquiry(access, user, inquiryId, rowHint) {
+  inquiryId = String(inquiryId || '').trim();
+  if (!inquiryId && !rowHint) throw dashboardError('BAD_REQUEST', 'No inquiry was specified.');
+
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)) throw dashboardError('BUSY', 'The sheet is busy. Please try again in a moment.');
+  try {
+    var s = dashboardOpenSheet();
+    var sheet = s.sheet;
+    var lastRow = sheet.getLastRow();
+    var lastCol = sheet.getLastColumn();
+    if (lastRow < 2) throw dashboardError('NOT_FOUND', 'Inquiry not found.');
+
+    var rawHeaders = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    var idCol = dashboardFindColumn(rawHeaders, DASHBOARD_COLUMN_PATTERNS.id);
+    var deptCol = dashboardFindColumn(rawHeaders, DASHBOARD_COLUMN_PATTERNS.department);
+    var statusCol = dashboardFindColumn(rawHeaders, DASHBOARD_COLUMN_PATTERNS.status);
+    if (statusCol === -1) throw dashboardError('MISSING_COLUMN', 'The sheet has no Status column.');
+    if (idCol === -1 && !rowHint) throw dashboardError('MISSING_COLUMN', 'The sheet has no Inquiry ID column.');
+
+    // Locate the row.
+    var rowNumber = 0;
+    if (idCol !== -1 && inquiryId) {
+      if (rowHint >= 2 && rowHint <= lastRow &&
+          String(sheet.getRange(rowHint, idCol + 1).getValue()).trim() === inquiryId) {
+        rowNumber = rowHint;
+      } else {
+        var ids = sheet.getRange(2, idCol + 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]).trim() === inquiryId) { rowNumber = i + 2; break; }
+        }
+      }
+    } else if (rowHint >= 2 && rowHint <= lastRow) {
+      rowNumber = rowHint;
+    }
+    if (!rowNumber) throw dashboardError('NOT_FOUND', 'Inquiry ' + inquiryId + ' was not found in the sheet.');
+
+    var rowValues = sheet.getRange(rowNumber, 1, 1, lastCol).getValues()[0];
+    if (!dashboardCanSeeDepartment(access, deptCol === -1 ? '' : rowValues[deptCol])) {
+      throw dashboardError('FORBIDDEN', 'You can only close inquiries of your own department.');
+    }
+
+    var previous = String(rowValues[statusCol] == null ? '' : rowValues[statusCol]).trim();
+    var target = DASHBOARD_CONFIG.CLOSED_STATUS_VALUE;
+    var closedAt = new Date();
+    if (previous.toLowerCase() === target.toLowerCase()) {
+      return { inquiryId: inquiryId, row: rowNumber, status: previous, previous: previous, alreadyClosed: true };
+    }
+
+    // The only writes: Status, plus Closed By / Closed At if those columns already exist.
+    sheet.getRange(rowNumber, statusCol + 1).setValue(target);
+    var closedByCol = dashboardFindColumn(rawHeaders, DASHBOARD_COLUMN_PATTERNS.closedBy);
+    var closedAtCol = dashboardFindColumn(rawHeaders, DASHBOARD_COLUMN_PATTERNS.closedAt);
+    if (closedByCol !== -1) sheet.getRange(rowNumber, closedByCol + 1).setValue(user.email);
+    if (closedAtCol !== -1) sheet.getRange(rowNumber, closedAtCol + 1).setValue(closedAt);
+    SpreadsheetApp.flush();
+
+    console.log('Inquiry ' + inquiryId + ' (row ' + rowNumber + ') closed by ' + user.email + ': "' + previous + '" → "' + target + '"');
+    return {
+      inquiryId: inquiryId,
+      row: rowNumber,
+      status: target,
+      previous: previous,
+      closedBy: user.email,
+      closedAt: dashboardFormatDate(closedAt, s.tz),
+      alreadyClosed: false
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Formatting, responses & errors                                     */
+/* ------------------------------------------------------------------ */
+
 function dashboardIsBlank(v) {
   return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
 }
 
-/** Normalises every cell to a string so the frontend gets predictable JSON. */
 function dashboardCellToString(v, tz) {
   if (v === null || v === undefined) return '';
   if (Object.prototype.toString.call(v) === '[object Date]') return dashboardFormatDate(v, tz);
-  if (typeof v === 'number') {
-    // Avoid "8.448645084E9" style output for phone numbers.
-    return Number.isInteger(v) ? v.toFixed(0) : String(v);
-  }
+  if (typeof v === 'number') return Number.isInteger(v) ? v.toFixed(0) : String(v);
   if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
   return String(v).trim();
 }
 
-/**
- * Converts a real Date cell into ISO-8601 with the spreadsheet's offset,
- * e.g. 2026-09-29T18:20:52.778+05:30. Invalid dates return ''.
- */
+/** Date cell → ISO-8601 with offset, e.g. 2026-09-29T18:20:52.778+05:30 */
 function dashboardFormatDate(date, tz) {
   if (!date || isNaN(date.getTime())) return '';
   return Utilities.formatDate(date, tz || Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
 }
 
-/* ------------------------------------------------------------------ */
-/*  Responses & errors                                                 */
-/* ------------------------------------------------------------------ */
-
 function dashboardJsonResponse(obj) {
-  return ContentService
-    .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function dashboardError(code, message) {
@@ -328,42 +476,48 @@ function dashboardError(code, message) {
   return err;
 }
 
-/** Converts any error into a safe JSON response (no stack traces leak). */
+/** Any error → safe JSON (no stack traces leak). */
 function dashboardErrorResponse(err) {
   var code = err && err.dashboardCode;
   if (!code) {
     console.error('Dashboard API unexpected error: ' + (err && err.stack ? err.stack : err));
     code = 'SERVER_ERROR';
   }
-  var message = code === 'SERVER_ERROR'
-    ? 'An unexpected error occurred while reading inquiry data.'
-    : err.message;
+  var message = code === 'SERVER_ERROR' ? 'An unexpected error occurred while processing the request.' : err.message;
   return dashboardJsonResponse({ ok: false, error: { code: code, message: message } });
 }
 
 /* ------------------------------------------------------------------ */
-/*  Maintenance helpers (run manually from the editor)                 */
+/*  Maintenance (run manually from the editor)                         */
 /* ------------------------------------------------------------------ */
 
-/**
- * Run once from the editor to check the sheet can be read.
- * View → Logs shows the headers and row count. Does not need a token.
- */
+/** Checks sheet access and prints what each configured user would see. Changes nothing. */
 function dashboardSelfTest() {
-  var data = getDepartmentInquiries();
-  console.log('Sheet: ' + data.sheet);
+  var data = getDepartmentInquiries({ role: 'admin', departments: [] });
+  console.log('Sheet: ' + data.sheet + '  Rows: ' + data.rowCount + '  Timezone: ' + data.timezone);
   console.log('Headers: ' + JSON.stringify(data.headers));
-  console.log('Rows: ' + data.rowCount + '  Timezone: ' + data.timezone);
-  var props = PropertiesService.getScriptProperties();
-  console.log('Supabase URL: ' + (props.getProperty('SUPABASE_URL') || DASHBOARD_CONFIG.SUPABASE_URL));
-  var domains = props.getProperty('DASHBOARD_ALLOWED_DOMAINS');
-  console.log('Allowed email domains: ' + (domains === null ? DASHBOARD_CONFIG.DEFAULT_ALLOWED_DOMAINS : domains));
+  var deptHeader = data.headers.filter(function (h) { return DASHBOARD_COLUMN_PATTERNS.department.test(h); })[0];
+  var sheetDepts = {};
+  data.rows.forEach(function (r) { if (deptHeader && r[deptHeader]) sheetDepts[r[deptHeader]] = (sheetDepts[r[deptHeader]] || 0) + 1; });
+  console.log('Departments in sheet: ' + JSON.stringify(sheetDepts));
+  console.log('Admins (see all ' + data.rowCount + '): ' + DASHBOARD_ACCESS.admins.join(', '));
+  Object.keys(DASHBOARD_ACCESS.departments).forEach(function (email) {
+    var access = { role: 'department', departments: DASHBOARD_ACCESS.departments[email] };
+    var n = data.rows.filter(function (r) { return dashboardCanSeeDepartment(access, deptHeader ? r[deptHeader] : ''); }).length;
+    console.log(email + ' → ' + access.departments.join(' | ') + ' → ' + n + ' inquiries');
+  });
 }
 
+
 /* ------------------------------------------------------------------ */
-/*  Web App entry point (standalone project only)                      */
+/*  Web App entry points (standalone project only)                     */
 /* ------------------------------------------------------------------ */
 function doGet(e) {
   if (isDashboardRequest(e)) return handleDashboardRequest(e);
+  return dashboardJsonResponse({ ok: false, error: { code: 'NOT_FOUND', message: 'Unknown request.' } });
+}
+
+function doPost(e) {
+  if (isDashboardPost(e)) return handleDashboardPost(e);
   return dashboardJsonResponse({ ok: false, error: { code: 'NOT_FOUND', message: 'Unknown request.' } });
 }

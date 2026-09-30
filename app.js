@@ -203,6 +203,7 @@
     filtered: [],
     knownKeys: null,        // Set of inquiry keys seen so far (null until first load)
     fresh: new Set(),       // keys that arrived during this session
+    access: null,           // { role: 'admin'|'department', departments: [] } from the API
     unseen: 0,              // new-inquiry count for the nav badge
     lastUpdated: null,
     lastFetchAt: 0,
@@ -294,6 +295,17 @@
       $('.banner__text', b).textContent = text;
       $('[data-action="retry"]', b).hidden = !retry;
       b.hidden = false;
+    },
+
+    /** Shows the signed-in user's role (Admin / their department). */
+    renderAccess() {
+      const a = State.access;
+      const text = !a ? '' : a.role === 'admin' ? 'Admin · All departments' : a.departments[0] || 'Department';
+      $$('[data-user-role]').forEach((el) => { el.textContent = text; el.hidden = !text; });
+      const full = !a ? 'Read-only inquiry dashboard'
+        : a.role === 'admin' ? 'Admin — all departments; can close any ticket'
+          : `${a.departments.join(', ')} — own department only; can close its tickets`;
+      $$('[data-user-access]').forEach((el) => { el.textContent = full; });
     },
 
     updateBadge() {
@@ -585,7 +597,10 @@
     INVALID_DATA: 'Inquiry data was received in an unexpected format. Please contact the administrator.',
     SHEET_NOT_FOUND: 'The department_inquery sheet could not be found. Please contact the administrator.',
     SHEET_UNAVAILABLE: 'The inquiry sheet is currently unavailable. Please try again shortly.',
-    FORBIDDEN: 'Your account is not authorised to view inquiry data. Please contact the administrator.',
+    FORBIDDEN: 'Your account has not been given access to the inquiry dashboard. Please contact the administrator.',
+    MISSING_COLUMN: 'A required column (Inquiry ID, Department or Status) is missing in the sheet.',
+    NOT_FOUND: 'This inquiry could not be found in the sheet. It may have been moved or deleted.',
+    BUSY: 'The sheet is busy right now. Please try again in a moment.',
     CONFIG_ERROR: 'The inquiry service is not fully configured yet. Please contact the administrator.',
     AUTH_UNAVAILABLE: 'Your session could not be verified right now. Please try again.',
     NOT_CONFIGURED: 'The Google Apps Script URL has not been set yet. Add GOOGLE_APPS_SCRIPT_URL in config.js.',
@@ -596,6 +611,7 @@
     constructor(code, detail) {
       super(detail || code);
       this.code = code;
+      this.detail = detail || '';
       this.userMessage = API_MESSAGES[code] || API_MESSAGES.DEFAULT;
     }
   }
@@ -606,37 +622,57 @@
       return /^https:\/\/script\.google(usercontent)?\.com\//.test(u) && !u.includes('DEPLOYMENT_ID');
     },
 
-    async fetchInquiries() {
+    /** Runs a request with the current Supabase token; refreshes the token once on UNAUTHORIZED. */
+    async withToken(send) {
       if (!Api.configured()) throw new ApiError('NOT_CONFIGURED');
       const token = await Auth.accessToken();
       if (!token) throw new ApiError('SESSION_EXPIRED');
-
-      let res = await Api.call(token);
+      let res = await send(token);
       if (!res.ok && res.error && res.error.code === 'UNAUTHORIZED') {
-        // Token may have just expired — refresh once and retry.
         const { data, error } = await Auth.client.auth.refreshSession();
         if (error || !data.session) throw new ApiError('SESSION_EXPIRED');
-        res = await Api.call(data.session.access_token);
+        res = await send(data.session.access_token);
         if (!res.ok && res.error && res.error.code === 'UNAUTHORIZED') throw new ApiError('SESSION_EXPIRED');
       }
       if (!res.ok) throw new ApiError((res.error && res.error.code) || 'DEFAULT', res.error && res.error.message);
+      return res;
+    },
+
+    async fetchInquiries() {
+      const res = await Api.withToken(Api.call);
       const d = res.data;
       if (!d || !Array.isArray(d.headers) || !Array.isArray(d.rows)) throw new ApiError('INVALID_DATA');
-      return d;
+      return Object.assign({}, d, { _user: res.user || null });
+    },
+
+    /** Closes one ticket: the Apps Script sets that row's Status to "Done" in the sheet. */
+    async closeTicket(rec) {
+      const res = await Api.withToken((token) => Api.post({
+        action: 'dashboard_close_ticket', token, inquiryId: rec.id, row: rec.row
+      }));
+      return { data: res.data, user: res.user };
     },
 
     /** Simple GET (no custom headers) so Apps Script works without CORS preflight. */
-    async call(token) {
+    call(token) {
       const url = new URL(CFG.GOOGLE_APPS_SCRIPT_URL);
       url.searchParams.set('action', API_ACTION);
       url.searchParams.set('token', token);
       url.searchParams.set('_', String(Date.now()));
+      return Api.send(url.toString(), { method: 'GET', cache: 'no-store' });
+    },
 
+    /** POST with a text/plain JSON body (a "simple" request — no CORS preflight). */
+    post(body) {
+      return Api.send(CFG.GOOGLE_APPS_SCRIPT_URL, { method: 'POST', body: JSON.stringify(body) });
+    },
+
+    async send(url, init) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 30000);
       let resp;
       try {
-        resp = await fetch(url.toString(), { method: 'GET', cache: 'no-store', redirect: 'follow', signal: ctrl.signal });
+        resp = await fetch(url, Object.assign({ redirect: 'follow', signal: ctrl.signal }, init));
       } catch (e) {
         throw new ApiError(e.name === 'AbortError' ? 'TIMEOUT' : 'NETWORK');
       } finally {
@@ -689,6 +725,10 @@
       const headers = payload.headers.map(String);
       State.headers = headers;
       State.sheetName = payload.sheet || State.sheetName;
+      // v2 API returns role + departments; an older v1 API returns only the email.
+      const u = payload._user;
+      State.access = u && u.role ? { role: u.role, departments: Array.isArray(u.departments) ? u.departments : [] } : null;
+      UI.renderAccess();
       State.timezone = payload.timezone || '';
       State.cols = Columns.detect(headers);
       const C = State.cols;
@@ -1191,6 +1231,8 @@
         return `<div${v.length > 80 ? ' class="details--long"' : ''}><dt>${Fmt.esc(h)}</dt><dd>${html}</dd></div>`;
       }).join('');
       $('#drawer-row').textContent = `Sheet row ${rec.row} · ${State.sheetName}`;
+      Drawer.current = rec;
+      Drawer.renderActions(rec);
 
       $('#drawer-scrim').hidden = false;
       $('#drawer').hidden = false;
@@ -1198,6 +1240,61 @@
       $('.drawer__body').scrollTop = 0;
       $('#drawer-close').focus();
     },
+    current: null,
+
+    /** "Mark as Done" → confirm → Apps Script sets Status = Done in the sheet. */
+    renderActions(rec, state = 'idle', message = '') {
+      const box = $('#drawer-actions');
+      const C = State.cols;
+      if (!C.status || !rec) { box.innerHTML = ''; return; }
+      if (rec.statusGroup === 'completed') {
+        box.innerHTML = `<span class="drawer__done"><svg aria-hidden="true"><use href="#i-check"/></svg>Ticket closed</span>`;
+        return;
+      }
+      if (state === 'confirm') {
+        box.innerHTML = `
+          <span class="drawer__confirm">Set Status to <b>Done</b> in the Google Sheet?</span>
+          <button type="button" class="btn btn--ghost btn--sm" data-ticket="cancel">Cancel</button>
+          <button type="button" class="btn btn--success btn--sm" data-ticket="confirm"><span class="btn__label">Yes, close ticket</span></button>`;
+        $('[data-ticket="confirm"]', box).focus();
+        return;
+      }
+      box.innerHTML = `
+        ${message ? `<span class="drawer__error" role="alert">${Fmt.esc(message)}</span>` : ''}
+        <button type="button" class="btn btn--success btn--sm" data-ticket="ask"><svg aria-hidden="true"><use href="#i-check"/></svg>Mark as Done</button>`;
+    },
+
+    async closeTicket() {
+      const rec = Drawer.current;
+      if (!rec) return;
+      const btn = $('#drawer-actions [data-ticket="confirm"]');
+      UI.busy(btn, true);
+      $$('#drawer-actions button').forEach((b) => { b.disabled = true; });
+      try {
+        const { data } = await Api.closeTicket(rec);
+        const C = State.cols;
+        rec.values[C.status] = data.status;
+        rec.status = data.status;
+        rec.statusGroup = Status.group(data.status);
+        rec.search = rec.search + ' ' + String(data.status).toLowerCase();
+        Render.all();
+        if (Drawer.current === rec && !$('#drawer').hidden) Drawer.open(rec, Drawer.returnFocus);
+        Notify.toast({
+          type: 'success',
+          title: data.alreadyClosed ? `${rec.id || 'Inquiry'} was already closed` : `${rec.id || 'Inquiry'} closed`,
+          body: `<p class="muted small" style="margin-top:4px">Status is now “${Fmt.esc(data.status)}” in the Google Sheet.</p>`,
+          timeout: 6000
+        });
+        setTimeout(() => { if (State.user) Poller.now(false); }, 1500);   // pick up any other sheet changes
+      } catch (err) {
+        if (err.code === 'SESSION_EXPIRED') { await App.expire(); return; }
+        const msg = err instanceof ApiError
+          ? (['FORBIDDEN', 'NOT_FOUND', 'MISSING_COLUMN', 'BUSY'].includes(err.code) && err.detail ? err.detail : err.userMessage).replace('Unable to refresh inquiry data', 'Could not close the ticket')
+          : 'Could not close the ticket. Please try again.';
+        Drawer.renderActions(rec, 'idle', msg);
+      }
+    },
+
     close() {
       if ($('#drawer').hidden) return;
       $('#drawer').hidden = true;
@@ -1220,6 +1317,14 @@
       $('#drawer-close-2').addEventListener('click', Drawer.close);
       $('#drawer-scrim').addEventListener('click', Drawer.close);
       $('#drawer').addEventListener('keydown', Drawer.trap);
+      $('#drawer-actions').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-ticket]');
+        if (!b || b.disabled) return;
+        const step = b.dataset.ticket;
+        if (step === 'ask') Drawer.renderActions(Drawer.current, 'confirm');
+        if (step === 'cancel') Drawer.renderActions(Drawer.current);
+        if (step === 'confirm') Drawer.closeTicket();
+      });
     }
   };
 
@@ -1404,7 +1509,7 @@
         ['Auto refresh', `Every ${Math.round(REFRESH_MS / 1000)} seconds`],
         ['Last updated', State.lastUpdated ? Fmt.dateTime(State.lastUpdated) : '—'],
         ['Apps Script API', Fmt.esc(endpoint)],
-        ['Access mode', 'Read-only (version 1)']
+        ['Your access', Fmt.esc(!State.access ? '—' : State.access.role === 'admin' ? 'Admin (all departments)' : State.access.departments.join(', '))]
       ];
       $('#source-info').innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
 
@@ -1435,6 +1540,7 @@
       $$('[data-user-email]').forEach((el) => { el.textContent = email; });
       $$('[data-user-initial]').forEach((el) => { el.textContent = (email[0] || '?').toUpperCase(); });
       UI.authMessage(null);
+      UI.renderAccess();
       UI.showApp();
       UI.banner(null);
       $('#last-updated').textContent = '—';
@@ -1463,6 +1569,7 @@
       $$('[data-user-email]').forEach((el) => { el.textContent = ''; });
       UI.closeSidebar();
       UI.banner(null);
+      UI.renderAccess();
       UI.updateBadge();
       $('#app-view').hidden = true;
     },

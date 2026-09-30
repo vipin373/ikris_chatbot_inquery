@@ -167,7 +167,7 @@
 
       <div class="sidebar__foot">
         <p class="sidebar__source"><svg aria-hidden="true"><use href="#i-sheet"/></svg>Source: <span data-sheet-name>department_inquery</span></p>
-        <p class="sidebar__version">Read-only · v1.0</p>
+        <p class="sidebar__version">v2.0</p>
       </div>
     </aside>
     <div class="scrim" data-close-sidebar hidden></div>
@@ -194,7 +194,7 @@
           </button>
           <div class="user">
             <span class="user__avatar" aria-hidden="true" data-user-initial>?</span>
-            <span class="user__email" data-user-email></span>
+            <span class="user__text"><span class="user__email" data-user-email></span><span class="user__role" data-user-role hidden></span></span>
           </div>
           <button type="button" class="btn btn--outline btn--sm" data-action="logout">
             <svg aria-hidden="true"><use href="#i-logout"/></svg><span class="hide-sm">Logout</span>
@@ -339,7 +339,7 @@
               <header class="card__head"><div><h2>Account</h2><p class="card__sub">Signed in with Supabase Authentication</p></div></header>
               <dl class="kv">
                 <div><dt>Email</dt><dd data-user-email></dd></div>
-                <div><dt>Access</dt><dd>Read-only inquiry dashboard</dd></div>
+                <div><dt>Access</dt><dd data-user-access>—</dd></div>
               </dl>
               <div class="card__actions">
                 <button type="button" class="btn btn--outline btn--sm" data-action="logout"><svg aria-hidden="true"><use href="#i-logout"/></svg>Logout</button>
@@ -379,6 +379,7 @@
     <footer class="drawer__foot">
       <span class="muted small" id="drawer-row"></span>
       <button type="button" class="btn btn--outline btn--sm" id="drawer-close-2">Close</button>
+      <div class="drawer__actions" id="drawer-actions" aria-live="polite"></div>
     </footer>
   </aside>
 

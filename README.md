@@ -36,6 +36,38 @@ Keeping `apps-script/DashboardAPI.gs` in the repo as a reference copy is fine �
 
 ---
 
+## 1b. Roles and closing tickets (v2)
+
+| Who | Sees | Can close tickets |
+|---|---|---|
+| **Admin** (`vipin@ikrispharmanetwork.com`, `bharat@ikrispharmanetwork.com`) | All inquiries | Any department |
+| **Department user** (e.g. `qa@ikrispharmanetwork.com`) | Only rows whose **Department** is theirs | Only their department's tickets |
+| Any other signed-in account | Nothing ("not been given access") | — |
+
+The list lives in `DASHBOARD_ACCESS` at the top of the Apps Script (`apps-script/IkrisDashboardAPI_standalone.gs`):
+
+| Email | Department(s) |
+|---|---|
+| marketing@ikrispharmanetwork.com | IT / Technical Support |
+| sneha@ikrispharmanetwork.com | Rare Disease |
+| ankita@ikrispharmanetwork.com | Clinical Trial / RLD |
+| operations@ikrispharmanetwork.com | Pharmaceutical Export / Procurement |
+| maneesha@ikrispharmanetwork.com | Real-World Data / Market Access |
+| shilpi@ikrispharmanetwork.com | Export |
+| vipin20mar@gmail.com | General / Other/Hr |
+| accounts@ikrispharmanetwork.com | Account Teams |
+| qa@ikrispharmanetwork.com | Quality Assurance |
+| vipindubey2032001@gmail.com | Import/NPP (also matches "Import" and "NPP") |
+
+- Filtering happens **in the Apps Script**, so a department user's browser never receives other departments' rows.
+- Department names match the sheet's Department column ignoring case, spaces and punctuation.
+- To change access: edit `DASHBOARD_ACCESS`, **Save**, then **Deploy → Manage deployments → ✏️ → Version: New version → Deploy** (URL stays the same). Or set a Script Property `DASHBOARD_ACCESS_JSON` with the same structure — no code edit needed.
+- Each person still needs a Supabase login: Supabase → Authentication → Users → **Add user → Send invitation** to that exact email.
+
+**Closing a ticket:** open an inquiry → **Mark as Done** → **Yes, close ticket**. The Apps Script changes **only that row's Status cell** to `Done` (found by Inquiry ID, under a lock so two people can't clash). If your sheet ever gets "Closed By" / "Closed At" columns, they are filled automatically; no columns are added otherwise.
+
+After updating the Apps Script code, Google asks once more for permission, because the script now needs to **edit** the sheet (it previously only read it). Approve it with the sheet owner's account.
+
 ## 2. What is safe to publish (security)
 
 | Value | Where it lives | Safe in GitHub? |
@@ -52,7 +84,7 @@ Why the data stays protected:
 - Every data request must include the user's Supabase **access token**. `DashboardAPI.gs` checks the expiry and issuer, then asks Supabase (`/auth/v1/user`) whether the token is genuine. Invalid or expired tokens get `UNAUTHORIZED` and no data.
 - Verified tokens are cached for up to 5 minutes (never beyond their expiry) so 30-second polling doesn't hammer Supabase.
 - Only the `department_inquery` tab is read. FAQ, medicine, Logistics_tracker, department_contacts, Bot_Config and n8n_Tool_Map are never opened.
-- The API is read-only. It has no write action.
+- The API's only write is setting one row's Status to `Done` when an authorised user closes a ticket.
 
 > 🔒 **Invite-only access.** The dashboard has no registration screen. To add a colleague: Supabase → **Authentication → Users → Add user → Send invitation** (or *Create new user* with a password). The invitation email opens the dashboard on a "Set your password" screen.
 > Also switch off **Allow new users to sign up** in Supabase (Authentication → Sign In / Providers) so nobody can create an account through the API. As a second layer, the Apps Script only returns data to `@ikrispharmanetwork.com` accounts.
