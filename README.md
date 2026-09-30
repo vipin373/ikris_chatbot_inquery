@@ -3,7 +3,7 @@
 Internal, read-only dashboard for the **`department_inquery`** tab of the `CHATBOT_IKRIS` Google Sheet.
 
 - **Frontend:** plain HTML + CSS + vanilla JavaScript (no React / Next / Vite, no build step) → hosted on **GitHub Pages**
-- **Authentication:** **Supabase Auth** only (register, login, logout, session, password reset)
+- **Authentication:** **Supabase Auth** only (invite-only accounts, login, logout, session, password reset)
 - **Data:** **Google Sheet** stays the single source of truth, read **live** through a **Google Apps Script** Web App
 - No Supabase database tables are used. No inquiry data is stored anywhere except your sheet.
 
@@ -54,10 +54,8 @@ Why the data stays protected:
 - Only the `department_inquery` tab is read. FAQ, medicine, Logistics_tracker, department_contacts, Bot_Config and n8n_Tool_Map are never opened.
 - The API is read-only. It has no write action.
 
-> ⚠️ **Important — who can register?** As requested, every registered user can view the dashboard. Because anyone who finds the URL could register, please do at least one of these:
-> 1. **Recommended:** set the Apps Script property `DASHBOARD_ALLOWED_DOMAINS` = `ikrispharmanetwork.com`. Only verified `@ikrispharmanetwork.com` accounts then receive data (others can sign in but see "not authorised").
-> 2. Keep **Confirm email** switched on in Supabase (default), so nobody can use an address they don't own.
-> 3. After your team has registered, turn off **Allow new users to sign up** in Supabase (Authentication → Sign In / Providers) and invite new staff from the Supabase dashboard instead.
+> 🔒 **Invite-only access.** The dashboard has no registration screen. To add a colleague: Supabase → **Authentication → Users → Add user → Send invitation** (or *Create new user* with a password). The invitation email opens the dashboard on a "Set your password" screen.
+> Also switch off **Allow new users to sign up** in Supabase (Authentication → Sign In / Providers) so nobody can create an account through the API. As a second layer, the Apps Script only returns data to `@ikrispharmanetwork.com` accounts.
 
 ---
 
@@ -202,7 +200,7 @@ The password-reset and email-confirmation links are sent with `redirectTo` = the
 ### 6.4 How the auth flows work
 | Flow | What happens |
 |---|---|
-| Register | `supabase.auth.signUp()` → verification email → link returns to the dashboard and signs the user in |
+| New user | Admin invites the user in Supabase → invitation link opens "Set your password" → `supabase.auth.updateUser({ password })` |
 | Login | `supabase.auth.signInWithPassword()` → session stored in the browser (stays logged in) |
 | Session | `supabase.auth.getSession()` on load, `onAuthStateChange()` for changes; tokens auto-refresh |
 | Logout | `supabase.auth.signOut()` → polling stops, all inquiry data is wiped from memory, login screen shown |
@@ -235,10 +233,9 @@ Everything is filtered client-side after one request, which is comfortable up to
 | # | Test | Expected |
 |---|---|---|
 | 1 | Open the GitHub Pages URL | Login page appears |
-| 2 | Click **Create account** | Registration form appears |
-| 3 | Register with a valid email/password | "Account created… verification link" message; user visible in Supabase → Authentication → Users |
-| 3b | Register with mismatched passwords / an existing email | Friendly error, no account created |
-| 4 | Confirm email, then log in | Dashboard appears with your email in the header |
+| 2 | Look at the login card | No "Create account" option; text says access is by invitation |
+| 3 | Invite a user in Supabase → open the invitation email | "Welcome — set your password" screen; after saving, the dashboard opens |
+| 4 | Log in | Dashboard appears with your email in the header |
 | 4b | Wrong password | "Incorrect email or password" |
 | 5 | Dashboard loads | Real rows from `department_inquery` (e.g. INQ-260928-142246-780 · Raman · Export). No demo data |
 | 6 | Add a row to the sheet (new Inquiry ID), wait ≤ 30 s | Toast "New Department Inquiry Received", row marked NEW, KPIs increase |

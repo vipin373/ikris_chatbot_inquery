@@ -99,35 +99,7 @@
             </div>
           </div>
           <button type="submit" class="btn btn--primary btn--block"><span class="btn__label">Sign in</span></button>
-          <p class="auth-form__switch">New to the dashboard? <button type="button" class="link" data-go="register">Create account</button></p>
-        </form>
-
-        <!-- Register -->
-        <form id="form-register" class="auth-form" data-auth-panel="register" novalidate hidden>
-          <header class="auth-form__head">
-            <h2>Create account</h2>
-            <p>Register with your work email. You will receive a verification email.</p>
-          </header>
-          <div class="field">
-            <label for="reg-email">Email address</label>
-            <input id="reg-email" name="email" type="email" autocomplete="email" inputmode="email" required>
-          </div>
-          <div class="field">
-            <label for="reg-password">Password</label>
-            <div class="password">
-              <input id="reg-password" name="password" type="password" autocomplete="new-password" required aria-describedby="reg-password-hint">
-              <button type="button" class="password__toggle" data-toggle-password aria-label="Show password" aria-pressed="false">
-                <svg aria-hidden="true"><use href="#i-eye"/></svg>
-              </button>
-            </div>
-            <p id="reg-password-hint" class="field__hint">At least <span data-min-pass>8</span> characters.</p>
-          </div>
-          <div class="field">
-            <label for="reg-confirm">Confirm password</label>
-            <input id="reg-confirm" name="confirm" type="password" autocomplete="new-password" required>
-          </div>
-          <button type="submit" class="btn btn--primary btn--block"><span class="btn__label">Create Account</span></button>
-          <p class="auth-form__switch">Already have an account? <button type="button" class="link" data-go="login">Login</button></p>
+          <p class="auth-form__switch">Access is by invitation only. Contact your administrator for an account.</p>
         </form>
 
         <!-- Forgot password -->
@@ -147,8 +119,8 @@
         <!-- Set new password (after clicking the email link) -->
         <form id="form-update-password" class="auth-form" data-auth-panel="update" novalidate hidden>
           <header class="auth-form__head">
-            <h2>Choose a new password</h2>
-            <p>Your reset link is verified. Set a new password for your account.</p>
+            <h2 data-update-title>Choose a new password</h2>
+            <p data-update-sub>Your reset link is verified. Set a new password for your account.</p>
           </header>
           <div class="field">
             <label for="new-password">New password</label>

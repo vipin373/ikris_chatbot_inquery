@@ -9,7 +9,7 @@
      State     single in-memory app state (cleared on logout)
      UI        view switching, live indicator, banners, sidebar
      Notify    toast notifications (new inquiry alerts etc.)
-     Auth      Supabase authentication (register, login, logout, reset)
+     Auth      Supabase authentication (login, logout, reset, invitations)
      Api       Google Apps Script API client (token-authenticated)
      Data      load → normalise → detect new inquiries
      Poller    30-second live refresh (stops on logout)
@@ -396,6 +396,7 @@
   const Auth = {
     client: null,
     recovery: false,
+    invite: false,
 
     appUrl() {
       return CFG.APP_URL || (window.location.origin + window.location.pathname);
@@ -460,7 +461,6 @@
       if (msg.includes('email address') && msg.includes('invalid')) return 'Please enter a valid email address.';
       if (msg.includes('expired') || msg.includes('otp')) return 'This link has expired or was already used. Please request a new one.';
       if (status === 429 || msg.includes('rate limit') || msg.includes('too many')) return 'Too many attempts. Please wait a minute and try again.';
-      if (context === 'register') return 'We could not create your account. Please try again.';
       if (context === 'reset') return 'We could not send the reset email. Please try again.';
       return 'Something went wrong. Please try again.';
     },
@@ -512,49 +512,6 @@
         : { type: 'success', text: `Verification email re-sent to ${email}.` });
     },
 
-    async handleRegister(e) {
-      e.preventDefault();
-      const form = e.currentTarget;
-      const btn = form.querySelector('[type="submit"]');
-      if (btn.disabled) return;
-      const email = form.email.value.trim();
-      const password = form.password.value;
-      const confirm = form.confirm.value;
-
-      Auth.markInvalid(form.email, !Auth.validEmail(email));
-      Auth.markInvalid(form.password, password.length < MIN_PASS);
-      Auth.markInvalid(form.confirm, !confirm || confirm !== password);
-      if (!Auth.validEmail(email)) return UI.authMessage({ type: 'error', text: 'Please enter a valid email address.' });
-      if (!password) return UI.authMessage({ type: 'error', text: 'Please choose a password.' });
-      if (password.length < MIN_PASS) return UI.authMessage({ type: 'error', text: `Your password must be at least ${MIN_PASS} characters.` });
-      if (password !== confirm) return UI.authMessage({ type: 'error', text: 'Passwords do not match.' });
-
-      UI.busy(btn, true);
-      UI.authMessage(null);
-      try {
-        const { data, error } = await Auth.client.auth.signUp({
-          email, password, options: { emailRedirectTo: Auth.appUrl() }
-        });
-        if (error) throw error;
-        // With email confirmation on, Supabase returns a user with no identities for an existing email.
-        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-          UI.authMessage({ type: 'error', text: 'An account with this email already exists. Please sign in, or reset your password.' });
-          return;
-        }
-        form.reset();
-        if (data.session) { App.enter(data.user); return; }       // email confirmation disabled
-        $('#login-email').value = email;
-        UI.showAuth('login', {
-          type: 'success',
-          text: `Account created. We have sent a verification link to ${email}. Please confirm your email, then sign in.`
-        });
-      } catch (err) {
-        UI.authMessage({ type: 'error', text: Auth.friendly(err, 'register') });
-      } finally {
-        UI.busy(btn, false);
-      }
-    },
-
     async handleForgot(e) {
       e.preventDefault();
       const form = e.currentTarget;
@@ -598,10 +555,12 @@
         const { data, error } = await Auth.client.auth.updateUser({ password });
         if (error) throw error;
         form.reset();
+        const wasInvite = Auth.invite;
         Auth.recovery = false;
+        Auth.invite = false;
         App.cleanUrl();
         App.enter(data.user);
-        Notify.success('Your password has been updated.');
+        Notify.success(wasInvite ? 'Your account is ready. Welcome!' : 'Your password has been updated.');
       } catch (err) {
         const { data } = await Auth.client.auth.getSession();
         if (!data.session) {
@@ -1531,7 +1490,6 @@
     bind() {
       // Auth forms
       $('#form-login').addEventListener('submit', Auth.handleLogin);
-      $('#form-register').addEventListener('submit', Auth.handleRegister);
       $('#form-forgot').addEventListener('submit', Auth.handleForgot);
       $('#form-update-password').addEventListener('submit', Auth.handleUpdatePassword);
       $('#auth-view').addEventListener('click', (e) => {
@@ -1621,7 +1579,9 @@
       // Read auth redirects (email confirmation / password reset) before Supabase consumes the URL.
       const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
       const query = new URLSearchParams(window.location.search);
-      Auth.recovery = hash.get('type') === 'recovery';
+      const linkType = hash.get('type');
+      Auth.recovery = linkType === 'recovery' || linkType === 'invite';   // both need a password to be set
+      Auth.invite = linkType === 'invite';
       const linkError = hash.get('error_description') || query.get('error_description');
       const confirmed = hash.get('type') === 'signup';
 
@@ -1633,7 +1593,11 @@
         UI.showBoot(false);
 
         if (Auth.recovery && session) {
-          UI.showAuth('update', { type: 'info', text: 'Reset link verified. Please choose a new password.' });
+          if (Auth.invite) {
+            $('[data-update-title]').textContent = 'Welcome — set your password';
+            $('[data-update-sub]').textContent = 'Your invitation is verified. Choose a password to activate your dashboard account.';
+          }
+          UI.showAuth('update', { type: 'info', text: Auth.invite ? `Signed in as ${session.user.email}.` : 'Reset link verified. Please choose a new password.' });
         } else if (session) {
           App.cleanUrl();
           App.enter(session.user);
