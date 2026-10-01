@@ -10,8 +10,10 @@ alter table public.chat_conversations
   add column if not exists shared_departments text[] not null default '{}';
 
 -- Remember every department a chat is routed to.
+-- security definer: the trigger also runs for the service role used by chat-ingest (n8n),
+-- which has no access to the chat_private schema.
 create or replace function chat_private.track_departments() returns trigger
-language plpgsql set search_path = '' as $$
+language plpgsql security definer set search_path = '' as $$
 begin
   if chat_private.norm(new.department) <> ''
      and not exists (select 1 from unnest(new.shared_departments) d
