@@ -102,6 +102,11 @@ Dashboard reply ─▶ chat-send (Edge Function, checks login + department)
 1. Apps Script → Project Settings → Script Properties → add `CHAT_INGEST_SECRET` (value sent privately).
 2. Run `syncAllInquiriesToChat` once, then run `installChatSyncTrigger` once (syncs new inquiries every minute).
 
+### Status (set up on 1 Oct 2026)
+- n8n workflow **chatbot**: added side nodes *Log incoming to Dashboard* (after Receive Message) and *Log bot reply to Dashboard* (after Send message). Errors are ignored so the bot is unaffected.
+- n8n workflow **Ikris Dashboard – Send WhatsApp reply** (webhook `/webhook/ikris-chat-send`) is published and saved in `chat_settings.send_webhook_url`.
+- Department routing of chats comes from the inquiry sync (Option A) — chats that never become an inquiry stay "Not yet routed" (admins only) until an admin assigns a department.
+
 ### n8n step 1 — log every WhatsApp message (incoming and bot replies)
 Add an **HTTP Request** node (set **Settings → On Error → Continue** so the chatbot never stops because of logging):
 
