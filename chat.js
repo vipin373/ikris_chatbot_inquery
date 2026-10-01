@@ -436,12 +436,13 @@ window.IkrisChat = (() => {
       const out = m.direction === 'out';
       const who = m.sender_type === 'customer' ? (m.sender_name || 'Customer')
         : m.sender_type === 'bot' ? (m.sender_name || 'Ikris Bot')
-          : (m.sender_name || 'Agent');
+          : m.sender_type === 'system' ? 'Inquiry form'
+            : (m.sender_name || 'Agent');
       const tick = out ? deliveryIcon(m) : '';
       parts.push(`
-        <div class="msg ${out ? 'msg--out' : 'msg--in'}${m.sender_type === 'bot' ? ' msg--bot' : ''}" data-msg="${esc(m.id)}">
+        <div class="msg ${out ? 'msg--out' : 'msg--in'}${m.sender_type === 'bot' ? ' msg--bot' : ''}${m.sender_type === 'system' ? ' msg--system' : ''}" data-msg="${esc(m.id)}">
           <div class="msg__bubble">
-            <div class="msg__who">${esc(who)}${m.sender_type === 'bot' ? ' <span class="msg__tag">Bot</span>' : ''}</div>
+            <div class="msg__who">${esc(who)}${m.sender_type === 'bot' ? ' <span class="msg__tag">Bot</span>' : ''}${m.sender_type === 'system' ? ' <span class="msg__tag msg__tag--inq">Inquiry</span>' : ''}</div>
             ${m.attachment_url || m.attachment_path ? `<div class="msg__att" data-att="${esc(m.id)}"></div>` : ''}
             ${m.body ? `<div class="msg__text">${linkify(esc(m.body))}</div>` : ''}
             <div class="msg__foot"><time datetime="${esc(m.created_at)}">${esc(time(d))}</time>${tick}</div>

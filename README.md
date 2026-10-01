@@ -97,6 +97,11 @@ Dashboard reply ─▶ chat-send (Edge Function, checks login + department)
 - Edge Functions: `chat-ingest` (for n8n, protected by a shared secret) and `chat-send` (for the dashboard, needs a signed-in user)
 - SQL: `supabase/migrations/001_chat_inbox.sql`; functions: `supabase/functions/`
 
+### Option A (works now) — every inquiry becomes a chat
+`apps-script/ChatSync.gs` (already included in `IkrisDashboardAPI_standalone.gs`) copies each inquiry row that has a phone number into Chat, routed to its department and assigned person, with the inquiry text as the first message. Read-only on the sheet; safe to re-run.
+1. Apps Script → Project Settings → Script Properties → add `CHAT_INGEST_SECRET` (value sent privately).
+2. Run `syncAllInquiriesToChat` once, then run `installChatSyncTrigger` once (syncs new inquiries every minute).
+
 ### n8n step 1 — log every WhatsApp message (incoming and bot replies)
 Add an **HTTP Request** node (set **Settings → On Error → Continue** so the chatbot never stops because of logging):
 
