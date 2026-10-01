@@ -35,6 +35,17 @@
     <symbol id="i-shield" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6z"/></symbol>
     <symbol id="i-sheet" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" d="M5 3h14v18H5zM5 9h14M5 15h14M11 9v12"/></symbol>
     <symbol id="i-pulse" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M3 12h4l2.5-6 5 12 2.5-6h4"/></symbol>
+    <symbol id="i-wa" viewBox="0 0 24 24"><path fill="currentColor" d="M12.04 2a9.9 9.9 0 0 0-8.5 14.98L2 22l5.17-1.5A9.92 9.92 0 1 0 12.04 2Zm0 18.1a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.07.89.91-2.99-.2-.31a8.2 8.2 0 1 1 6.84 3.74Zm4.5-6.14c-.25-.12-1.46-.72-1.69-.8-.23-.08-.39-.12-.55.12-.16.25-.63.8-.78.97-.14.16-.29.18-.53.06a6.74 6.74 0 0 1-3.37-2.94c-.25-.44.25-.41.72-1.36.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.41-.55-.42h-.47a.9.9 0 0 0-.65.3 2.74 2.74 0 0 0-.86 2.04 4.77 4.77 0 0 0 1 2.53 10.9 10.9 0 0 0 4.17 3.68c1.55.67 2.16.73 2.94.61.47-.07 1.46-.6 1.66-1.18.21-.58.21-1.07.15-1.18-.06-.1-.22-.16-.47-.28Z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 5.5h16v10H9l-5 4z"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="2" width="11" height="20" rx="2.2" fill="currentColor"/><rect x="8.3" y="4.6" width="7.4" height="12.6" rx=".6" fill="#fff"/><circle cx="12" cy="19.3" r="1" fill="#fff"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M14 3H6v18h12V7zM14 3v4h4"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="m20 11.5-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path fill="currentColor" d="M3.4 20.4 21 12 3.4 3.6 3.4 10l12.6 2-12.6 2z"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M4 5h16l-6 7.5V19l-4-2v-4.5z"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2"/></g></symbol>
+    <symbol id="i-check2" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="m2.5 12.5 4 4 8.5-9M11 16.5l.5.5 9-10"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8M16 5v4M10 15v4"/></symbol>
     <symbol id="i-mark" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="currentColor"/><path d="M13 8h6v5h5v6h-5v5h-6v-5H8v-6h5z" fill="#fff"/></symbol>
   </svg>
 
@@ -158,6 +169,7 @@
       <nav class="nav">
         <p class="nav__label">Operations</p>
         <button type="button" class="nav__item" data-nav="dashboard" aria-current="page"><svg aria-hidden="true"><use href="#i-grid"/></svg>Dashboard</button>
+        <button type="button" class="nav__item" data-nav="chat"><svg aria-hidden="true"><use href="#i-chat"/></svg>Chat<span class="nav__badge nav__badge--wa" data-chat-unread hidden></span></button>
         <button type="button" class="nav__item" data-nav="inquiries"><svg aria-hidden="true"><use href="#i-list"/></svg>Department Inquiries<span class="nav__badge" data-new-count hidden></span></button>
         <button type="button" class="nav__item" data-nav="analytics"><svg aria-hidden="true"><use href="#i-chart"/></svg>Analytics</button>
         <p class="nav__label">Account</p>
@@ -306,6 +318,113 @@
           </section>
         </section>
 
+        <!-- ===== VIEW: CHAT ===== -->
+        <section class="view view--chat" data-view="chat" id="chat-view" hidden>
+          <div class="notice notice--info chat-noaccess" id="chat-noaccess" hidden>Your account has not been given access to chats. Please contact the administrator.</div>
+          <div class="banner chat-error" id="chat-error" role="alert" hidden>
+            <svg aria-hidden="true"><use href="#i-alert"/></svg><span class="banner__text" id="chat-error-text"></span>
+            <button type="button" class="btn btn--sm btn--outline" id="chat-retry">Try again</button>
+          </div>
+
+          <div class="chat" id="chat">
+            <!-- Conversation list -->
+            <section class="chat__list-pane" aria-label="Conversations">
+              <div class="chat__toolbar">
+                <label class="sr-only" for="chat-status">Conversation status</label>
+                <select id="chat-status" class="chat__status-select">
+                  <option value="all">All</option>
+                  <option value="open" selected>Open</option>
+                  <option value="pending">Pending</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+                <button type="button" class="icon-btn" id="chat-search-btn" aria-label="Search conversations" aria-expanded="false" aria-controls="chat-search"><svg aria-hidden="true"><use href="#i-search"/></svg></button>
+                <button type="button" class="btn btn--wa btn--sm" id="chat-new-btn"><svg aria-hidden="true"><use href="#i-chat"/></svg>New Chat</button>
+                <button type="button" class="icon-btn" id="chat-filter-btn" aria-label="Filters" aria-expanded="false" aria-controls="chat-filters"><svg aria-hidden="true"><use href="#i-filter"/></svg></button>
+                <span class="chat__live" id="chat-live" data-state="off" title="Live updates"></span>
+              </div>
+              <div class="chat__search" id="chat-search" hidden>
+                <svg aria-hidden="true"><use href="#i-search"/></svg>
+                <label class="sr-only" for="chat-search-input">Search conversations</label>
+                <input id="chat-search-input" type="search" placeholder="Search name, phone, message, assigned user…" autocomplete="off">
+              </div>
+              <div class="chat__filters" id="chat-filters" hidden>
+                <div class="filter">
+                  <label for="chat-f-dept">Department</label>
+                  <select id="chat-f-dept"></select>
+                </div>
+                <div class="filter">
+                  <label for="chat-f-assigned">Assigned user</label>
+                  <select id="chat-f-assigned"></select>
+                </div>
+                <label class="chat__check"><input type="checkbox" id="chat-f-unread"> Unread only</label>
+              </div>
+              <div class="chat__chips chips" id="chat-chips" hidden></div>
+              <p class="chat__count" id="chat-count" aria-live="polite"></p>
+              <ul class="chat__list" id="chat-list"></ul>
+            </section>
+
+            <!-- Selected conversation -->
+            <section class="chat__thread" id="chat-thread" aria-label="Conversation">
+              <div class="chat__thread-empty" id="chat-thread-empty">
+                <svg aria-hidden="true"><use href="#i-wa"/></svg>
+                <strong>Select a conversation</strong>
+                <span>Choose a chat on the left to read and reply.</span>
+              </div>
+
+              <div class="chat__thread-main" id="chat-thread-main" hidden>
+                <header class="chat__th">
+                  <button type="button" class="icon-btn chat__back" id="chat-back" aria-label="Back to conversations"><svg aria-hidden="true"><use href="#i-back"/></svg></button>
+                  <span class="chat__th-avatar" id="chat-th-avatar" aria-hidden="true"></span>
+                  <div class="chat__th-text">
+                    <h2 id="chat-th-name"></h2>
+                    <a id="chat-th-phone" class="chat__th-phone" target="_blank" rel="noopener noreferrer"></a>
+                  </div>
+                  <button type="button" class="btn btn--outline btn--sm" id="chat-details-btn" aria-expanded="false" aria-controls="chat-assign"><svg aria-hidden="true"><use href="#i-sliders"/></svg><span class="hide-sm">Assign / Status</span></button>
+                </header>
+                <div class="chat__th-meta" id="chat-th-meta"></div>
+
+                <div class="chat-assign" id="chat-assign" hidden>
+                  <div class="filter">
+                    <label for="chat-a-dept">Department</label>
+                    <select id="chat-a-dept"></select>
+                    <small class="muted" id="chat-a-dept-hint">Only an admin can move a chat to another department.</small>
+                  </div>
+                  <div class="filter">
+                    <label for="chat-a-assigned">Assigned user</label>
+                    <input id="chat-a-assigned" list="chat-a-assigned-list" autocomplete="off" placeholder="Name">
+                    <datalist id="chat-a-assigned-list"></datalist>
+                  </div>
+                  <div class="filter">
+                    <label for="chat-a-status">Status</label>
+                    <select id="chat-a-status"><option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select>
+                  </div>
+                  <div class="filter">
+                    <label for="chat-a-priority">Priority</label>
+                    <select id="chat-a-priority"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select>
+                  </div>
+                  <div class="chat-assign__actions">
+                    <button type="button" class="btn btn--primary btn--sm" id="chat-a-save">Save</button>
+                    <span class="chat-assign__msg" id="chat-a-msg" aria-live="polite"></span>
+                  </div>
+                </div>
+
+                <div class="chat__messages" id="chat-messages" aria-live="polite"></div>
+
+                <div class="chat__window-note" id="chat-window-note" hidden></div>
+                <div class="chat__file" id="chat-file" hidden></div>
+                <div class="chat__composer">
+                  <button type="button" class="icon-btn" id="chat-attach" aria-label="Attach a file (image, PDF, document)"><svg aria-hidden="true"><use href="#i-clip"/></svg></button>
+                  <input type="file" id="chat-file-input" hidden accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.txt">
+                  <label class="sr-only" for="chat-text">Message</label>
+                  <textarea id="chat-text" rows="1" placeholder="Type your message…"></textarea>
+                  <button type="button" class="chat__send" id="chat-send" aria-label="Send message"><svg aria-hidden="true"><use href="#i-send"/></svg></button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
         <!-- ===== VIEW: ANALYTICS ===== -->
         <section class="view" data-view="analytics" hidden>
           <div class="grid grid--charts">
@@ -383,6 +502,30 @@
     </footer>
   </aside>
 
+  <!-- ============ NEW CHAT DIALOG ============ -->
+  <div class="drawer-scrim" id="chat-new-scrim" hidden></div>
+  <div class="modal" id="chat-new-dialog" role="dialog" aria-modal="true" aria-labelledby="chat-new-title" hidden>
+    <form id="chat-new-form" class="modal__card" novalidate>
+      <header class="modal__head">
+        <h2 id="chat-new-title">New Conversation</h2>
+        <button type="button" class="icon-btn" data-chat-new-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <div class="modal__body">
+        <div class="field"><label for="chat-n-name">Customer name</label><input id="chat-n-name" autocomplete="off"></div>
+        <div class="field"><label for="chat-n-phone">WhatsApp number (with country code)</label><input id="chat-n-phone" inputmode="tel" placeholder="+91 98765 43210" autocomplete="off" required></div>
+        <div class="field"><label for="chat-n-dept">Department</label><select id="chat-n-dept"></select></div>
+        <div class="field"><label for="chat-n-assigned">Assign to</label><input id="chat-n-assigned" list="chat-n-assigned-list" autocomplete="off"><datalist id="chat-n-assigned-list"></datalist></div>
+        <div class="field"><label for="chat-n-text">Message</label><textarea id="chat-n-text" rows="3" placeholder="Type message…" required></textarea></div>
+        <p class="field__hint">WhatsApp only delivers a first message to a new contact if your provider sends it as an approved template.</p>
+        <p class="chat-assign__msg is-error" id="chat-n-msg" role="alert"></p>
+      </div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--ghost btn--sm" data-chat-new-close>Cancel</button>
+        <button type="submit" class="btn btn--wa btn--sm"><span class="btn__label">Start Chat</span></button>
+      </footer>
+    </form>
+  </div>
+
   <!-- ============ TOASTS ============ -->
   <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
@@ -390,6 +533,7 @@
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="chat.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

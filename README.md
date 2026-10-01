@@ -26,6 +26,7 @@ Google Sheet 1JWgKel_MnCtZKnm4s-knliTYyVzRBITfs7wxlL9JQtU  (remains private)
 | File | Where it goes |
 |---|---|
 | `index.html` | Root of the GitHub repository |
+| `chat.js` | Root of the GitHub repository (Chat inbox) |
 | `style.css` | Root of the GitHub repository |
 | `app.js` | Root of the GitHub repository |
 | `config.js` | Root of the GitHub repository (edit `GOOGLE_APPS_SCRIPT_URL` first) |
@@ -67,6 +68,76 @@ The list lives in `DASHBOARD_ACCESS` at the top of the Apps Script (`apps-script
 **Closing a ticket:** open an inquiry → **Mark as Done** → **Yes, close ticket**. The Apps Script changes **only that row's Status cell** to `Done` (found by Inquiry ID, under a lock so two people can't clash). If your sheet ever gets "Closed By" / "Closed At" columns, they are filled automatically; no columns are added otherwise.
 
 After updating the Apps Script code, Google asks once more for permission, because the script now needs to **edit** the sheet (it previously only read it). Approve it with the sheet owner's account.
+
+## 1c. Chat Inbox (WhatsApp conversations)
+
+**Sidebar → Chat** opens a WhatsApp-style inbox: conversation list (status filter, search, department / assigned-user / unread filters, **New Chat**) and the selected conversation (messages, attachments, reply box, **Assign / Status** panel). Each department card on the dashboard has a **💬 Chat** strip that opens the inbox with that department already selected.
+
+| Who | Sees in Chat | Can |
+|---|---|---|
+| Admin | All conversations, incl. "Not yet routed" | Reply, assign, change status/priority, **move to another department** |
+| Department login | Only its department's conversations | Reply, assign, change status/priority |
+
+Access is enforced **in the database** (Supabase Row Level Security), not just in the browser. Chat updates live (Supabase Realtime) — no refresh needed.
+
+### How it works
+```
+Customer ⇄ WhatsApp ⇄ Cunnekt ⇄ n8n chatbot
+                                   │  (1) every message in/out → POST chat-ingest
+                                   ▼
+                       Supabase: chat_conversations / chat_messages  ──realtime──▶ Dashboard Chat
+                                   ▲
+Dashboard reply ─▶ chat-send (Edge Function, checks login + department)
+                                   │  (2) POST → n8n "send" webhook → Cunnekt → customer
+```
+
+### Supabase objects (already created)
+- Tables: `chat_staff` (who sees which department), `chat_conversations`, `chat_messages`, `chat_settings` (server-only)
+- Function `chat_mark_read`, storage bucket `chat-attachments` (private, 20 MB/file)
+- Edge Functions: `chat-ingest` (for n8n, protected by a shared secret) and `chat-send` (for the dashboard, needs a signed-in user)
+- SQL: `supabase/migrations/001_chat_inbox.sql`; functions: `supabase/functions/`
+
+### n8n step 1 — log every WhatsApp message (incoming and bot replies)
+Add an **HTTP Request** node (set **Settings → On Error → Continue** so the chatbot never stops because of logging):
+
+- Method `POST` · URL `https://mdyniigwwhupdnxwtnvo.supabase.co/functions/v1/chat-ingest`
+- Header `x-ikris-secret` = *(the secret sent to you privately — never commit it)*
+- Body (JSON), map the fields from your Cunnekt trigger:
+```json
+{
+  "phone": "{{ customer WhatsApp number }}",
+  "customer_name": "{{ customer profile name }}",
+  "direction": "in",
+  "text": "{{ message text }}",
+  "attachment_url": "{{ media URL, if any }}",
+  "attachment_type": "{{ media mime type, if any }}",
+  "attachment_name": "{{ file name, if any }}",
+  "wa_message_id": "{{ WhatsApp message id }}"
+}
+```
+- After the node that sends the **bot's reply**, add the same node with `"direction": "out"` and the bot's text.
+- Where the bot saves a row to `department_inquery`, add one more call to route the chat:
+  `{ "phone": "…", "department": "Export", "assigned_to": "Shilpi", "inquiry_id": "INQ-…" }` (no text needed).
+- Optional delivery receipts: `{ "event": "status", "wa_message_id": "…", "status": "delivered" }` (`sent` / `delivered` / `read` / `failed`).
+
+### n8n step 2 — send dashboard replies to WhatsApp
+1. n8n → **Import from file** → `n8n/ikris-chat-send.workflow.json`.
+2. In **Secret OK?** replace `REPLACE_WITH_IKRIS_SECRET` with the same secret.
+3. Replace **Send via Cunnekt (EDIT ME)** with the Cunnekt send-message node your chatbot already uses (phone = `body.to`, text = `body.text`, file = `body.media_url` / `body.file_name`).
+4. **Activate** the workflow and copy the webhook's **Production URL**.
+5. Save it in Supabase (SQL editor):
+   `update chat_settings set value = 'https://YOUR-N8N/webhook/ikris-chat-send' where key = 'send_webhook_url';`
+Until this is set, replies are saved in the dashboard and marked "not sent to WhatsApp".
+
+> WhatsApp rule: free-text replies are only delivered within 24 hours of the customer's last message. The chat shows a warning when that window has passed; outside it Cunnekt needs an approved template.
+
+### Adding or changing chat access
+```sql
+insert into chat_staff (email, display_name, role, departments)
+values ('newperson@ikrispharmanetwork.com', 'New Person', 'department', '{"Export"}')
+on conflict (email) do update set role = excluded.role, departments = excluded.departments, display_name = excluded.display_name;
+```
+Keep it in line with `DASHBOARD_ACCESS` in the Apps Script (inquiries) so both parts of the dashboard agree.
 
 ## 2. What is safe to publish (security)
 

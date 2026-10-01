@@ -221,6 +221,7 @@
      =================================================================== */
   const VIEW_TITLES = {
     dashboard: 'Department Inquiry Dashboard',
+    chat: 'Chat',
     inquiries: 'Department Inquiries',
     analytics: 'Analytics',
     settings: 'Settings'
@@ -270,6 +271,8 @@
       $('#page-title').textContent = VIEW_TITLES[view];
       UI.closeSidebar();
       if (view === 'inquiries') { State.unseen = 0; UI.updateBadge(); }
+      if (view === 'chat' && window.IkrisChat) window.IkrisChat.onShow();
+      document.body.classList.toggle('is-chat-view', view === 'chat');
       Charts.renderFor(view);
       $('#content').scrollTop = 0;
       window.scrollTo({ top: 0 });
@@ -907,17 +910,33 @@
       box.innerHTML = groups.map((g) => {
         const open = g.records.filter((r) => r.statusGroup !== 'completed').length;
         const nNew = g.records.filter((r) => r.statusGroup === 'new').length;
+        const chat = Dashboard.chatButton(g.label);
         return `
-          <button type="button" class="dept" data-dept="${Fmt.esc(g.key)}" aria-label="${Fmt.esc(g.label)}: ${g.count} inquiries. Show in table">
-            <span class="dept__top">
-              <span class="dept__name">${Fmt.esc(g.label)}</span>
-              <svg class="dept__arrow" aria-hidden="true"><use href="#i-chevron"/></svg>
-            </span>
-            <span class="dept__count">${Fmt.num(g.count)}<small>${g.count === 1 ? 'inquiry' : 'inquiries'}</small></span>
-            <span class="dept__bar" aria-hidden="true"><span style="width:${Math.max(4, (g.count / max) * 100)}%"></span></span>
-            ${hasStatus ? `<span class="dept__foot"><span><b>${nNew}</b> new</span><span><b>${open}</b> open</span></span>` : ''}
-          </button>`;
+          <div class="dept">
+            <button type="button" class="dept__main" data-dept="${Fmt.esc(g.key)}" aria-label="${Fmt.esc(g.label)}: ${g.count} inquiries. Show in table">
+              <span class="dept__top">
+                <span class="dept__name">${Fmt.esc(g.label)}</span>
+                <svg class="dept__arrow" aria-hidden="true"><use href="#i-chevron"/></svg>
+              </span>
+              <span class="dept__count">${Fmt.num(g.count)}<small>${g.count === 1 ? 'inquiry' : 'inquiries'}</small></span>
+              <span class="dept__bar" aria-hidden="true"><span style="width:${Math.max(4, (g.count / max) * 100)}%"></span></span>
+              ${hasStatus ? `<span class="dept__foot"><span><b>${nNew}</b> new</span><span><b>${open}</b> open</span></span>` : ''}
+            </button>
+            ${chat}
+          </div>`;
       }).join('');
+    },
+
+    /** "💬 Chat" strip on a department card (active chats + unread from the chat inbox). */
+    chatButton(label) {
+      const chat = window.IkrisChat;
+      if (!chat || !chat.ready()) return '';
+      const st = chat.statsFor(label);
+      return `
+        <button type="button" class="dept__chat" data-chat-dept="${Fmt.esc(label)}" aria-label="Open ${Fmt.esc(label)} chats: ${st.active} active, ${st.unread} unread">
+          <span class="dept__chat-label"><svg aria-hidden="true"><use href="#i-chat"/></svg>Chat</span>
+          <span class="dept__chat-stats"><span><b>${st.active}</b> active</span>${st.unread ? `<span class="dept__chat-unread" title="${st.unread} unread">${st.unread}</span>` : ''}</span>
+        </button>`;
     },
 
     recent() {
@@ -1548,12 +1567,16 @@
       $('#page-size').value = String(State.pageSize);
       UI.showView('dashboard');
       Render.all();                                            // skeleton states
+      if (window.IkrisChat) window.IkrisChat.start(user);
       Data.refresh().finally(() => { if (State.user) Poller.start(); });
     },
 
     /** Clears all dashboard state & DOM. Safe to call more than once. */
     leave() {
       Poller.stop();
+      if (window.IkrisChat) window.IkrisChat.stop();
+      $$('[data-chat-unread]').forEach((el) => { el.hidden = true; });
+      document.body.classList.remove('is-chat-view');
       Drawer.close();
       Notify.clearAll();
       Charts.destroyAll();
@@ -1634,6 +1657,8 @@
           if (a === 'clear-filters') Filters.reset();
           return;
         }
+        const chatDept = e.target.closest('[data-chat-dept]');
+        if (chatDept && window.IkrisChat) { window.IkrisChat.openDepartment(chatDept.dataset.chatDept); return; }
         const dept = e.target.closest('[data-dept]');
         if (dept) {
           Filters.reset();
@@ -1662,6 +1687,22 @@
       Drawer.bind();
     },
 
+    initChat() {
+      if (!window.IkrisChat) return;
+      const refreshCounts = Fmt.debounce(() => {
+        const n = window.IkrisChat.totalUnread();
+        $$('[data-chat-unread]').forEach((el) => { el.hidden = !n; el.textContent = n > 99 ? '99+' : String(n); });
+        if (State.loaded) Dashboard.departments();
+      }, 120);
+      window.IkrisChat.init({
+        client: () => Auth.client,
+        toast: (opts) => Notify.toast(opts),
+        showView: (v) => UI.showView(v),
+        isViewing: (v) => State.view === v,
+        onCounts: refreshCounts
+      });
+    },
+
     fatal(text) {
       UI.showBoot(false);
       UI.showAuth('login', { type: 'error', text });
@@ -1673,6 +1714,7 @@
       $$('[data-min-pass]').forEach((el) => { el.textContent = String(MIN_PASS); });
       App.bind();
       Charts.setup();
+      App.initChat();
 
       if (!CFG.SUPABASE_URL || !CFG.SUPABASE_PUBLISHABLE_KEY) {
         App.fatal('The dashboard is not configured: Supabase URL or publishable key is missing in config.js.');

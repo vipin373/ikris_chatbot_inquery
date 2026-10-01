@@ -1,0 +1,115 @@
+{
+  "name": "Ikris Dashboard – Send WhatsApp reply",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ikris-chat-send",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1",
+      "name": "Dashboard reply (Webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "ikris-chat-send"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.headers['x-ikris-secret'] }}",
+              "rightValue": "REPLACE_WITH_IKRIS_SECRET",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a2",
+      "name": "Secret OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_CUNNEKT_SEND_MESSAGE_URL",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "REPLACE_WITH_CUNNEKT_API_KEY_OR_USE_A_CREDENTIAL" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $json.body.to }}\",\n  \"type\": \"{{ $json.body.media_url ? 'document' : 'text' }}\",\n  \"text\": {{ JSON.stringify($json.body.text || '') }},\n  \"media_url\": {{ JSON.stringify($json.body.media_url || '') }},\n  \"file_name\": {{ JSON.stringify($json.body.file_name || '') }}\n}",
+        "options": { "timeout": 15000 }
+      },
+      "id": "a3",
+      "name": "Send via Cunnekt (EDIT ME)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 200],
+      "notes": "Replace this node with the SAME Cunnekt 'send message' node your chatbot already uses. Map: phone = {{$('Dashboard reply (Webhook)').item.json.body.to}}, text = {{$('Dashboard reply (Webhook)').item.json.body.text}}, media = body.media_url / body.file_name.",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"ok\": true,\n  \"wa_message_id\": {{ JSON.stringify($json.messageId || $json.message_id || $json.id || ($json.messages && $json.messages[0] && $json.messages[0].id) || '') }}\n}",
+        "options": {}
+      },
+      "id": "a4",
+      "name": "Reply: sent",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 160]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": {{ JSON.stringify(($json.error && ($json.error.message || $json.error)) || 'Cunnekt rejected the message') }} }",
+        "options": { "responseCode": 502 }
+      },
+      "id": "a5",
+      "name": "Reply: failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 320]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{ \"ok\": false, \"error\": \"unauthorized\" }",
+        "options": { "responseCode": 401 }
+      },
+      "id": "a6",
+      "name": "Reply: unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [460, 420]
+    }
+  ],
+  "connections": {
+    "Dashboard reply (Webhook)": { "main": [[{ "node": "Secret OK?", "type": "main", "index": 0 }]] },
+    "Secret OK?": {
+      "main": [
+        [{ "node": "Send via Cunnekt (EDIT ME)", "type": "main", "index": 0 }],
+        [{ "node": "Reply: unauthorized", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send via Cunnekt (EDIT ME)": {
+      "main": [
+        [{ "node": "Reply: sent", "type": "main", "index": 0 }],
+        [{ "node": "Reply: failed", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {}
+}
