@@ -104,6 +104,9 @@ window.IkrisChat = (() => {
   }
 
   const deptMatches = (convDept, label) => !label || (label === NONE ? !norm(convDept) : aliasSet(label).has(norm(convDept)));
+  /** True when the chat belongs to `label`: its current department or any department it was routed to before. */
+  const convMatches = (c, label) => !label || (label === NONE ? !norm(c.department)
+    : [c.department].concat(c.shared_departments || []).some((d) => deptMatches(d, label)));
   const deptDisplay = (dep) => { const o = aliasOwner(dep); return o ? o.departments[0] : (dep || 'Unassigned'); };
 
   function assigneeNames(label) {
@@ -112,7 +115,7 @@ window.IkrisChat = (() => {
       if (s.role !== 'department' || !s.display_name) return;
       if (!label || s.departments.some((d) => aliasSet(label).has(norm(d)))) names.add(s.display_name);
     });
-    S.convs.forEach((c) => { if (c.assigned_to && (!label || deptMatches(c.department, label))) names.add(c.assigned_to); });
+    S.convs.forEach((c) => { if (c.assigned_to && (!label || convMatches(c, label))) names.add(c.assigned_to); });
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }
 
@@ -224,7 +227,7 @@ window.IkrisChat = (() => {
     return Array.from(S.convs.values())
       .filter((c) =>
         (f.status === 'all' || c.status === f.status) &&
-        deptMatches(c.department, f.department) &&
+        convMatches(c, f.department) &&
         (!f.assigned || (f.assigned === NONE ? !c.assigned_to : norm(c.assigned_to) === norm(f.assigned))) &&
         (!f.unread || c.unread_count > 0) &&
         tokens.every((t) => [c.customer_name, c.customer_phone, phoneLabel(c.customer_phone), c.last_message,
@@ -788,7 +791,7 @@ window.IkrisChat = (() => {
     S.filters.status = 'all';
     S.filters.q = '';
     S.filters.unread = false;
-    if (S.selected && !deptMatches((S.convs.get(S.selected) || {}).department, match)) closeThread();
+    if (S.selected && !convMatches(S.convs.get(S.selected) || {}, match)) closeThread();
     renderFilters();
     renderList();
     ctx.showView('chat');
@@ -798,7 +801,7 @@ window.IkrisChat = (() => {
   function statsFor(label) {
     let active = 0; let unread = 0; let total = 0;
     S.convs.forEach((c) => {
-      if (!deptMatches(c.department, label)) return;
+      if (!convMatches(c, label)) return;
       total++;
       if (c.status === 'open' || c.status === 'pending') active++;
       unread += c.unread_count || 0;
