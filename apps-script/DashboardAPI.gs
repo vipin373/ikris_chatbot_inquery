@@ -62,7 +62,7 @@ var DASHBOARD_ACCESS = {
     'marketing@ikrispharmanetwork.com':  ['IT / Technical Support'],
     'sneha@ikrispharmanetwork.com':      ['Rare Disease'],
     'ankita@ikrispharmanetwork.com':     ['Clinical Trial / RLD'],
-    'operations@ikrispharmanetwork.com': ['Pharmaceutical Export / Procurement'],
+    'operations@ikrispharmanetwork.com': ['Logistics', 'Logistic'],
     'maneesha@ikrispharmanetwork.com':   ['Real-World Data / Market Access'],
     'shilpi@ikrispharmanetwork.com':     ['Export'],
     'vipin20mar@gmail.com':              ['General / Other/Hr'],
