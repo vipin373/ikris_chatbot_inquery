@@ -55,7 +55,7 @@ The list lives in `DASHBOARD_ACCESS` at the top of the Apps Script (`apps-script
 | operations@ikrispharmanetwork.com | Logistics |
 | maneesha@ikrispharmanetwork.com | Real-World Data / Market Access |
 | shilpi@ikrispharmanetwork.com | Export |
-| vipin20mar@gmail.com | General / Other/Hr |
+| vipin20mar@gmail.com | Hr |
 | accounts@ikrispharmanetwork.com | Account Teams |
 | qa@ikrispharmanetwork.com | Quality Assurance |
 | vipindubey2032001@gmail.com | Import/NPP (also matches "Import" and "NPP") |

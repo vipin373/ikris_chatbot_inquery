@@ -73,7 +73,7 @@ var DASHBOARD_ACCESS = {
     'operations@ikrispharmanetwork.com': ['Logistics', 'Logistic'],
     'maneesha@ikrispharmanetwork.com':   ['Real-World Data / Market Access'],
     'shilpi@ikrispharmanetwork.com':     ['Export'],
-    'vipin20mar@gmail.com':              ['General / Other/Hr'],
+    'vipin20mar@gmail.com':              ['Hr', 'General / Other/Hr', 'General / Other'],
     'accounts@ikrispharmanetwork.com':   ['Account Teams'],
     'qa@ikrispharmanetwork.com':         ['Quality Assurance'],
     'vipindubey2032001@gmail.com':       ['Import/NPP', 'Import', 'NPP']
