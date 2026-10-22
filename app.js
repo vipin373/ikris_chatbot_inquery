@@ -222,6 +222,7 @@
   const VIEW_TITLES = {
     dashboard: 'Department Inquiry Dashboard',
     chat: 'Chat',
+    campaigns: 'WhatsApp Campaigns',
     inquiries: 'Department Inquiries',
     analytics: 'Analytics',
     settings: 'Settings'
@@ -272,6 +273,7 @@
       UI.closeSidebar();
       if (view === 'inquiries') { State.unseen = 0; UI.updateBadge(); }
       if (view === 'chat' && window.IkrisChat) window.IkrisChat.onShow();
+      if (view === 'campaigns' && window.IkrisCampaigns) window.IkrisCampaigns.onShow();
       document.body.classList.toggle('is-chat-view', view === 'chat');
       Charts.renderFor(view);
       $('#content').scrollTop = 0;
@@ -1568,6 +1570,7 @@
       UI.showView('dashboard');
       Render.all();                                            // skeleton states
       if (window.IkrisChat) window.IkrisChat.start(user);
+      if (window.IkrisCampaigns) window.IkrisCampaigns.start(user);
       Data.refresh().finally(() => { if (State.user) Poller.start(); });
     },
 
@@ -1575,6 +1578,7 @@
     leave() {
       Poller.stop();
       if (window.IkrisChat) window.IkrisChat.stop();
+      if (window.IkrisCampaigns) window.IkrisCampaigns.stop();
       $$('[data-chat-unread]').forEach((el) => { el.hidden = true; });
       document.body.classList.remove('is-chat-view');
       Drawer.close();
@@ -1701,6 +1705,14 @@
         isViewing: (v) => State.view === v,
         onCounts: refreshCounts
       });
+      if (window.IkrisCampaigns) {
+        window.IkrisCampaigns.init({
+          client: () => Auth.client,
+          toast: (opts) => Notify.toast(opts),
+          showView: (v) => UI.showView(v),
+          isViewing: (v) => State.view === v
+        });
+      }
     },
 
     fatal(text) {

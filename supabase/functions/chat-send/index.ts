@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
   if (body.conversation_id) {
     const { data } = await admin.from("chat_conversations").select("*").eq("id", String(body.conversation_id)).maybeSingle();
     conv = data;
-    if (!conv || !canSee(staff, conv.department)) return json(403, { ok: false, code: "FORBIDDEN", error: "You cannot reply in this conversation." });
+    if (!conv || !(canSee(staff, conv.department) || (conv.shared_departments ?? []).some((d: string) => canSee(staff, d)))) return json(403, { ok: false, code: "FORBIDDEN", error: "You cannot reply in this conversation." });
   } else if (body.new_conversation && typeof body.new_conversation === "object") {
     const n = body.new_conversation as Record<string, unknown>;
     const phone = String(n.phone ?? "").replace(/\D/g, "");

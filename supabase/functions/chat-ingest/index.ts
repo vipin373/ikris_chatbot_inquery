@@ -19,7 +19,7 @@
 //    "assigned_to": "Shilpi",            // optional
 //    "inquiry_id": "INQ-…"               // optional
 //  }
-//  Status updates:  { "event": "status", "wa_message_id": "wamid.XXX", "status": "delivered" }
+//  Status updates:  { "event": "status", "wa_message_id": "wamid.XXX", "status": "delivered", "error": "131047: …" }
 //  Routing only:    { "phone": "…", "department": "Export", "assigned_to": "Shilpi" }   (no text)
 // =====================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -54,13 +54,37 @@ function safeEqual(a: string, b: string) {
 
 const DELIVERY = ["queued", "sent", "delivered", "read", "failed"];
 
+/** Turns WhatsApp error codes into a sentence staff can act on. */
+function friendlyError(raw: string | null) {
+  if (!raw) return "WhatsApp could not deliver this message.";
+  const code = raw.split(":")[0].trim();
+  const known: Record<string, string> = {
+    "131047": "Not sent: more than 24 hours since the customer last replied. Send an approved template instead.",
+    "131026": "Not delivered: this number is not on WhatsApp or cannot receive messages.",
+    "131049": "Not delivered: WhatsApp limited marketing messages to this customer. Try again later.",
+    "131050": "Not delivered: the customer has stopped marketing messages from this business.",
+    "131051": "Not sent: unsupported message type.",
+    "131053": "Not sent: the attachment could not be uploaded.",
+    "130472": "Not delivered: the customer is part of a WhatsApp experiment and did not receive marketing messages.",
+    "132001": "Not sent: the template does not exist or is not approved in this language.",
+    "132000": "Not sent: the number of template variables does not match.",
+  };
+  return known[code] ?? `WhatsApp error ${raw}`;
+}
+
 async function handleOne(item: Record<string, unknown>) {
   // Delivery status update for an outgoing message
   if (item.event === "status") {
     const wa = clean(item.wa_message_id, 200);
     const st = String(item.status || "").toLowerCase();
     if (!wa || !DELIVERY.includes(st)) return { ok: false, error: "wa_message_id and a valid status are required" };
-    const { error } = await admin.from("chat_messages").update({ delivery_status: st }).eq("wa_message_id", wa);
+    const patch: Record<string, unknown> = { delivery_status: st };
+    if (st === "failed") patch.error = friendlyError(clean(item.error, 500));
+    // Never move a message backwards (e.g. a late "delivered" after "read").
+    const order = ["queued", "sent", "delivered", "read"];
+    const { data: cur } = await admin.from("chat_messages").select("delivery_status").eq("wa_message_id", wa).maybeSingle();
+    if (cur && st !== "failed" && order.indexOf(cur.delivery_status) > order.indexOf(st)) return { ok: true, skipped: true };
+    const { error } = await admin.from("chat_messages").update(patch).eq("wa_message_id", wa);
     return error ? { ok: false, error: error.message } : { ok: true };
   }
 

@@ -395,9 +395,10 @@ window.IkrisChat = (() => {
     const old = c.last_inbound_at && (Date.now() - new Date(c.last_inbound_at).getTime() > 24 * 3600 * 1000);
     const note = $('#chat-window-note');
     note.hidden = !(old || !c.last_inbound_at);
-    note.textContent = !c.last_inbound_at
-      ? 'This customer has not messaged yet. WhatsApp only delivers a first message if your provider sends it as an approved template.'
-      : 'Last customer message was more than 24 hours ago. WhatsApp may reject free-text replies until the customer writes again (or an approved template is used).';
+    note.innerHTML = `<span>${!c.last_inbound_at
+      ? 'This customer has not messaged yet. WhatsApp only delivers an approved template as the first message.'
+      : 'The 24-hour reply window has closed — WhatsApp will reject normal messages until the customer writes again.'}</span>`
+      + (window.IkrisCampaigns ? '<button type="button" class="btn btn--wa btn--sm" data-chat-template>Send template</button>' : '');
   }
 
   function renderAssign() {
@@ -445,12 +446,12 @@ window.IkrisChat = (() => {
       parts.push(`
         <div class="msg ${out ? 'msg--out' : 'msg--in'}${m.sender_type === 'bot' ? ' msg--bot' : ''}${m.sender_type === 'system' ? ' msg--system' : ''}" data-msg="${esc(m.id)}">
           <div class="msg__bubble">
-            <div class="msg__who">${esc(who)}${m.sender_type === 'bot' ? ' <span class="msg__tag">Bot</span>' : ''}${m.sender_type === 'system' ? ' <span class="msg__tag msg__tag--inq">Inquiry</span>' : ''}</div>
+            <div class="msg__who">${esc(who)}${m.sender_type === 'bot' ? ' <span class="msg__tag">Bot</span>' : ''}${m.sender_type === 'system' ? ' <span class="msg__tag msg__tag--inq">Inquiry</span>' : ''}${m.template_name ? ` <span class="msg__tag msg__tag--tpl" title="WhatsApp template: ${esc(m.template_name)}">Template</span>` : ''}</div>
             ${m.attachment_url || m.attachment_path ? `<div class="msg__att" data-att="${esc(m.id)}"></div>` : ''}
             ${m.body ? `<div class="msg__text">${linkify(esc(m.body))}</div>` : ''}
             <div class="msg__foot"><time datetime="${esc(m.created_at)}">${esc(time(d))}</time>${tick}</div>
             ${m.delivery_status === 'failed' || m.delivery_status === 'not_sent'
-              ? `<div class="msg__err">${esc(m.delivery_status === 'not_sent' ? 'Saved — not sent to WhatsApp' : 'Not delivered')}${m.error ? `: ${esc(m.error)}` : ''}</div>` : ''}
+              ? `<div class="msg__err">${m.error ? esc(/^Not (sent|delivered)/.test(m.error) ? m.error : `Not delivered: ${m.error}`) : esc(m.delivery_status === 'not_sent' ? 'Saved — not sent to WhatsApp' : 'Not delivered')}</div>` : ''}
           </div>
         </div>`);
     }
@@ -697,6 +698,11 @@ window.IkrisChat = (() => {
         return;
       }
       if (e.target.closest('#chat-new-btn')) { openNewChat(); return; }
+      if (e.target.closest('[data-chat-template]') && S.selected && window.IkrisCampaigns) {
+        const c = S.convs.get(S.selected);
+        window.IkrisCampaigns.openTemplatePicker(c, (msg) => { if (msg) onMessage(msg, true); });
+        return;
+      }
       if (e.target.closest('#chat-attach')) { $('#chat-file-input').click(); return; }
       if (e.target.closest('#chat-retry')) { start(S.user); }
     });
@@ -817,6 +823,13 @@ window.IkrisChat = (() => {
 
   return {
     init, start, stop, openDepartment, statsFor, totalUnread,
+    conversations: () => Array.from(S.convs.values()),
+    me: () => S.me,
+    isAdmin,
+    departmentOptions,
+    convMatches,
+    deptDisplay,
+    openConversation(id) { ctx.showView('chat'); if (S.convs.has(id)) select(id); },
     ready: () => S.loaded && !!S.me,
     onShow() { renderList(); if (S.selected) { const c = S.convs.get(S.selected); if (c && c.unread_count) markRead(c.id); } }
   };

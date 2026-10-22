@@ -373,3 +373,19 @@ Everything is filtered client-side after one request, which is comfortable up to
 | "Not authorised to view inquiry data" | The user's email domain is not in `DASHBOARD_ALLOWED_DOMAINS` |
 | Reset / confirmation link opens the wrong page | Add the exact GitHub Pages URL to Supabase **Redirect URLs** and **Site URL** |
 | Emails not arriving | Check spam; configure custom SMTP in Supabase (built-in sender is rate-limited) |
+
+## 1d. WhatsApp templates & campaigns
+
+**Campaigns** page (sidebar) — like Cunnekt's Marketing Campaigns, built on your own WhatsApp Cloud API number.
+
+| Piece | Where |
+|---|---|
+| UI | `campaigns.js` (+ "Send template" button in Chat for chats older than 24 h) |
+| Server | Supabase edge function `wa-campaigns` (actions: `sync_templates`, `create_template`, `delete_template`, `send_campaign`, `send_template`) |
+| Meta API | n8n workflow **"Ikris Dashboard – WhatsApp templates & campaigns API"** (`/webhook/ikris-wa-api`, source in `n8n/templates-api.sdk.js`). Uses the existing n8n WhatsApp credential, so the Meta token never leaves n8n. |
+| Data | `wa_templates`, `campaigns`, `campaign_recipients` (+ `chat_messages.template_name/campaign_id`) — migration `003_campaigns.sql`, RPC `campaign_stats()` |
+
+Access: admin → all templates, campaigns and chat contacts. Department users → create templates, send campaigns to their own department's chat contacts, see their own department's campaigns. The server re-checks every recipient.
+
+Flow: **New Template** → submitted to Meta (status *In review*) → once **Approved** → **Create Campaign** → pick template, fill variables (customer name / fixed text / inquiry ID), choose contacts → Send. Sent / delivered / read / replied / failed counts update from WhatsApp delivery receipts.
+Meta charges per template message (marketing > utility). Only message customers who opted in.
