@@ -36,6 +36,13 @@ window.IkrisCampaigns = (function () {
     ['inquiry', 'Inquiry ID'],
     ['agent', 'Your name']
   ];
+  const MEDIA_RULES = {
+    IMAGE: { types: ['image/jpeg', 'image/png'], max: 5 * 1024 * 1024, accept: 'image/jpeg,image/png', label: 'JPG or PNG image, up to 5 MB', noun: 'image' },
+    VIDEO: { types: ['video/mp4', 'video/3gpp'], max: 16 * 1024 * 1024, accept: 'video/mp4,video/3gpp', label: 'MP4 video, up to 16 MB', noun: 'video' },
+    DOCUMENT: { types: ['application/pdf'], max: 100 * 1024 * 1024, accept: 'application/pdf', label: 'PDF document, up to 100 MB', noun: 'PDF' }
+  };
+  const isMediaFormat = (f) => !!MEDIA_RULES[String(f || '').toUpperCase()];
+  const fileSize = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
   const STATUS_LABEL = { APPROVED: 'Approved', PENDING: 'In review', IN_APPEAL: 'In appeal', REJECTED: 'Rejected', PAUSED: 'Paused', DISABLED: 'Disabled', PENDING_DELETION: 'Deleting' };
 
   let ctx = null;
@@ -43,7 +50,8 @@ window.IkrisCampaigns = (function () {
     user: null, loaded: false, error: null,
     templates: [], campaigns: [], stats: new Map(),
     tab: 'campaigns', q: '', tplQ: '', syncing: false, channel: null, poll: null,
-    send: null, tplButtons: [], confirmArmed: false
+    send: null, tplButtons: [], confirmArmed: false,
+    tplHeader: 'NONE', tplMedia: null
   });
   let S = fresh();
 
@@ -61,6 +69,22 @@ window.IkrisCampaigns = (function () {
     }
     if (data && data.ok === false && data.error && !('sent' in data)) throw new Error(data.error);
     return data;
+  }
+
+  /* Upload a header file to the public wa-media bucket (folder: templates/ or campaigns/). */
+  async function uploadMedia(folder, file, format) {
+    const rule = MEDIA_RULES[format];
+    if (!rule) throw new Error('Choose a header type first.');
+    if (!rule.types.includes(file.type)) throw new Error(`This file type is not allowed. Use a ${rule.label}.`);
+    if (file.size > rule.max) throw new Error(`The file is too large (${fileSize(file.size)}). Use a ${rule.label}.`);
+    const safe = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(-80) || 'file';
+    const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
+    const path = `${folder}/${id}-${safe}`;
+    const store = client().storage.from('wa-media');
+    const { error } = await store.upload(path, file, { contentType: file.type, upsert: false, cacheControl: '31536000' });
+    if (error) throw new Error(error.message || 'The file could not be uploaded.');
+    const url = store.getPublicUrl(path).data.publicUrl;
+    return { path, url, type: file.type, size: file.size, name: file.name };
   }
 
   /* ---------------- data ---------------- */
@@ -196,8 +220,17 @@ window.IkrisCampaigns = (function () {
       .replace(/\n/g, '<br>');
   }
 
-  function bubbleHtml({ header, body, footer, buttons }) {
-    return `${header ? `<div class="wa-bubble__head">${waFormat(header)}</div>` : ''}
+  function mediaHtml(m) {
+    if (!m || !m.format) return '';
+    const f = m.format;
+    if (f === 'IMAGE' && m.url) return `<div class="wa-bubble__media"><img src="${esc(m.url)}" alt="Header image" loading="lazy"></div>`;
+    if (f === 'VIDEO' && m.url) return `<div class="wa-bubble__media wa-bubble__media--video"><video src="${esc(m.url)}" muted preload="metadata"></video><span class="wa-play" aria-hidden="true">▶</span></div>`;
+    if (f === 'DOCUMENT') return `<div class="wa-bubble__doc"><span class="wa-doc-ico" aria-hidden="true">PDF</span><span>${esc(m.name || 'Document')}</span></div>`;
+    return `<div class="wa-bubble__media wa-bubble__media--empty"><span>${f === 'VIDEO' ? 'Video' : 'Image'} header</span></div>`;
+  }
+
+  function bubbleHtml({ header, body, footer, buttons, media }) {
+    return `${mediaHtml(media)}${header ? `<div class="wa-bubble__head">${waFormat(header)}</div>` : ''}
       <div class="wa-bubble__body">${body ? waFormat(body) : '<span class="muted">Your message will appear here.</span>'}</div>
       ${footer ? `<div class="wa-bubble__foot">${esc(footer)}</div>` : ''}
       <div class="wa-bubble__time">${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</div>
@@ -207,7 +240,9 @@ window.IkrisCampaigns = (function () {
   const tplParts = (t) => {
     const comps = Array.isArray(t.components) ? t.components : [];
     const btns = (comps.find((c) => c.type === 'BUTTONS') || {}).buttons || [];
-    return { header: t.header_text || (t.header_format && t.header_format !== 'TEXT' ? `[${t.header_format.toLowerCase()}]` : ''), body: t.body_text || '', footer: t.footer_text || '', buttons: btns };
+    const f = String(t.header_format || '').toUpperCase();
+    const media = isMediaFormat(f) ? { format: f, url: t.header_media_url || '', name: t.header_media_name || '' } : null;
+    return { header: f === 'TEXT' ? (t.header_text || '') : '', body: t.body_text || '', footer: t.footer_text || '', buttons: btns, media };
   };
 
   function renderTemplates() {
@@ -236,7 +271,7 @@ window.IkrisCampaigns = (function () {
         </header>
         <div class="wa-bubble wa-bubble--card">${bubbleHtml(tplParts(t))}</div>
         ${t.rejected_reason ? `<p class="tpl-card__reason">Rejected: ${esc(String(t.rejected_reason).replace(/_/g, ' ').toLowerCase())}</p>` : ''}
-        ${st === 'APPROVED' && !t.sendable ? '<p class="tpl-card__reason">Has a media header or dynamic button — send it from Meta/Cunnekt instead.</p>' : ''}
+        ${st === 'APPROVED' && !t.sendable ? '<p class="tpl-card__reason">Has a dynamic button — send it from Meta/Cunnekt instead.</p>' : ''}
         <footer class="tpl-card__foot">
           ${st === 'APPROVED' && t.sendable ? `<button type="button" class="btn btn--wa btn--sm" data-tpl-use="${esc(t.name)}|${esc(t.language)}">Use in campaign</button>` : ''}
           ${canDelete ? `<button type="button" class="icon-btn" data-tpl-delete="${esc(t.name)}" aria-label="Delete template ${esc(t.name)}" title="Delete"><svg aria-hidden="true"><use href="#i-trash"/></svg></button>` : ''}
@@ -263,11 +298,63 @@ window.IkrisCampaigns = (function () {
   function openTemplateDialog() {
     $('#tpl-form').reset();
     S.tplButtons = [];
+    S.tplMedia = null;
+    setHeaderType('NONE');
     $('#tpl-msg').textContent = '';
     renderTplExamples();
     renderTplButtons();
     renderTplPreview();
     openDialog('tpl-dialog');
+  }
+
+  function setHeaderType(type) {
+    S.tplHeader = type;
+    $$('#tpl-header-type [data-htype]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.htype === type)));
+    $('#tpl-header').hidden = type !== 'TEXT';
+    const rule = MEDIA_RULES[type];
+    $('#tpl-media').hidden = !rule;
+    if (rule) {
+      if (S.tplMedia && S.tplMedia.format !== type) S.tplMedia = null;
+      $('#tpl-media-file').accept = rule.accept;
+      $('#tpl-media-label').innerHTML = `<b>Choose ${rule.noun}</b> or drag it here`;
+      $('#tpl-media-rule').textContent = rule.label;
+    }
+    renderTplMedia();
+    renderTplPreview();
+  }
+
+  function renderTplMedia() {
+    const m = S.tplMedia;
+    const info = $('#tpl-media-info');
+    $('#tpl-media-drop').hidden = !!m;
+    info.hidden = !m;
+    if (!m) { info.innerHTML = ''; return; }
+    info.innerHTML = m.uploading
+      ? `<span class="spinner" aria-hidden="true"></span><span class="media-file__name">${esc(m.name)}</span><span class="muted small">Uploading…</span>`
+      : `<svg aria-hidden="true" class="media-file__ok"><use href="#i-check"/></svg><span class="media-file__name">${esc(m.name)}</span><span class="muted small">${fileSize(m.size)}</span><button type="button" class="btn btn--ghost btn--sm" data-tpl-media-change>Change</button><button type="button" class="icon-btn" data-tpl-media-remove aria-label="Remove file" title="Remove"><svg aria-hidden="true"><use href="#i-close"/></svg></button>`;
+  }
+
+  async function pickTplMedia(file) {
+    if (!file) return;
+    const format = S.tplHeader;
+    const msg = $('#tpl-msg');
+    msg.textContent = '';
+    const local = format === 'IMAGE' ? URL.createObjectURL(file) : '';
+    S.tplMedia = { format, name: file.name, size: file.size, uploading: true, url: local };
+    renderTplMedia(); renderTplPreview();
+    try {
+      const up = await uploadMedia('templates', file, format);
+      if (S.tplHeader !== format) return;
+      S.tplMedia = { ...up, format, url: up.url, uploading: false };
+      ctx.toast({ type: 'success', title: 'File uploaded.', timeout: 2500 });
+    } catch (err) {
+      S.tplMedia = null;
+      msg.textContent = err.message;
+      ctx.toast({ type: 'error', title: err.message, timeout: 6000 });
+    } finally {
+      $('#tpl-media-file').value = '';
+      renderTplMedia(); renderTplPreview();
+    }
   }
 
   function renderTplExamples() {
@@ -305,8 +392,10 @@ window.IkrisCampaigns = (function () {
   }
 
   function renderTplPreview() {
+    const media = MEDIA_RULES[S.tplHeader] ? { format: S.tplHeader, url: S.tplMedia && S.tplMedia.url, name: S.tplMedia && S.tplMedia.name } : null;
     $('#tpl-preview').innerHTML = bubbleHtml({
-      header: $('#tpl-header').value.trim(),
+      media,
+      header: S.tplHeader === 'TEXT' ? $('#tpl-header').value.trim() : '',
       body: $('#tpl-body').value,
       footer: $('#tpl-footer').value.trim(),
       buttons: S.tplButtons.filter((b) => b.text)
@@ -326,6 +415,10 @@ window.IkrisCampaigns = (function () {
     if (S.templates.some((t) => t.name === name && t.language === $('#tpl-language').value)) { msg.textContent = 'A template with this name and language already exists.'; return; }
     const examples = $$('[data-tpl-example]').map((i) => i.value.trim());
     if (examples.some((x) => !x)) { msg.textContent = 'Fill in an example value for every variable.'; return; }
+    const htype = S.tplHeader;
+    if (htype === 'TEXT' && !$('#tpl-header').value.trim()) { msg.textContent = 'Type the header text, or choose “None”.'; $('#tpl-header').focus(); return; }
+    const m = S.tplMedia;
+    if (MEDIA_RULES[htype] && (!m || m.uploading || !m.path)) { msg.textContent = m && m.uploading ? 'Wait for the file to finish uploading.' : `Upload the header ${MEDIA_RULES[htype].noun}.`; return; }
 
     const btn = $('#tpl-submit');
     btn.disabled = true; btn.setAttribute('aria-busy', 'true');
@@ -334,7 +427,10 @@ window.IkrisCampaigns = (function () {
         action: 'create_template',
         template: {
           name, category: $('#tpl-category').value, language: $('#tpl-language').value,
-          header_text: $('#tpl-header').value.trim(), body, footer_text: $('#tpl-footer').value.trim(),
+          header_type: htype,
+          header_text: htype === 'TEXT' ? $('#tpl-header').value.trim() : '',
+          ...(MEDIA_RULES[htype] ? { media_path: m.path, media_type: m.type, media_size: m.size, media_name: m.name } : {}),
+          body, footer_text: $('#tpl-footer').value.trim(),
           examples, buttons: S.tplButtons.filter((b) => b.text && b.text.trim())
         }
       });
@@ -391,10 +487,69 @@ window.IkrisCampaigns = (function () {
       : 'Create a template in the <b>Templates</b> tab and wait for Meta to approve it.';
 
     if (!chatMode) setupAudience();
+    S.send.media = null;
+    renderSendMedia();
     renderVars();
     renderSendPreview();
     updateSendButton();
     openDialog('send-dialog');
+  }
+
+  const sendMediaFormat = () => {
+    const t = selectedTemplate();
+    const f = t ? String(t.header_format || '').toUpperCase() : '';
+    return MEDIA_RULES[f] ? f : '';
+  };
+  // The file that will go in the header: one chosen for this send, else the template's own file.
+  const sendMedia = () => {
+    const f = sendMediaFormat();
+    if (!f || !S.send) return null;
+    if (S.send.media && S.send.media.format === f) return S.send.media;
+    const t = selectedTemplate();
+    return t.header_media_url ? { format: f, url: t.header_media_url, name: t.header_media_name || '', isDefault: true } : { format: f, missing: true };
+  };
+
+  function renderSendMedia() {
+    const box = $('#send-media');
+    const f = sendMediaFormat();
+    box.hidden = !f;
+    if (!f) { box.innerHTML = ''; return; }
+    const rule = MEDIA_RULES[f];
+    const m = sendMedia();
+    $('#send-media-file').accept = rule.accept;
+    const thumb = m && m.url && f === 'IMAGE' ? `<img src="${esc(m.url)}" alt="" class="send-media__thumb">` : `<span class="send-media__ico" aria-hidden="true">${f === 'DOCUMENT' ? 'PDF' : f === 'VIDEO' ? '▶' : '🖼'}</span>`;
+    box.innerHTML = `<p class="send-label">Header ${rule.noun}</p>
+      <div class="send-media__row">
+        ${m && m.uploading ? '<span class="spinner" aria-hidden="true"></span>' : thumb}
+        <div class="send-media__text">
+          ${m && m.missing ? `<b>No ${rule.noun} saved with this template.</b><span class="muted small">Upload a ${rule.label}.</span>`
+            : `<b>${esc(m.name || (m.isDefault ? `Template ${rule.noun}` : rule.noun))}</b><span class="muted small">${m.uploading ? 'Uploading…' : m.isDefault ? 'Same file as the approved template' : 'Uploaded for this send'}</span>`}
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" data-send-media-change${m && m.uploading ? ' disabled' : ''}>${m && m.missing ? 'Upload' : 'Change file'}</button>
+        ${S.send && S.send.media && !S.send.media.uploading ? '<button type="button" class="btn btn--ghost btn--sm" data-send-media-reset>Use template file</button>' : ''}
+      </div>`;
+  }
+
+  async function pickSendMedia(file) {
+    if (!file || !S.send) return;
+    const f = sendMediaFormat();
+    if (!f) return;
+    const send = S.send;
+    send.media = { format: f, name: file.name, uploading: true };
+    renderSendMedia(); updateSendButton();
+    try {
+      const up = await uploadMedia('campaigns', file, f);
+      if (S.send !== send) return;
+      send.media = { format: f, url: up.url, name: up.name };
+    } catch (err) {
+      if (S.send !== send) return;
+      send.media = null;
+      $('#send-msg').textContent = err.message;
+      ctx.toast({ type: 'error', title: err.message, timeout: 6000 });
+    } finally {
+      $('#send-media-file').value = '';
+      if (S.send === send) { renderSendMedia(); renderSendPreview(); updateSendButton(); }
+    }
   }
 
   function renderVars() {
@@ -454,7 +609,9 @@ window.IkrisCampaigns = (function () {
       return v || m;
     });
     const p = tplParts(t);
-    $('#send-preview').innerHTML = bubbleHtml({ header: fill(p.header, vars.header), body: fill(p.body, vars.body), footer: p.footer, buttons: p.buttons });
+    const m = sendMedia();
+    const media = p.media ? { format: p.media.format, url: m && m.url, name: m && m.name } : null;
+    $('#send-preview').innerHTML = bubbleHtml({ media, header: fill(p.header, vars.header), body: fill(p.body, vars.body), footer: p.footer, buttons: p.buttons });
   }
 
   /* audience */
@@ -518,16 +675,18 @@ window.IkrisCampaigns = (function () {
     const label = $('.btn__label', b);
     if (!S.send) return;
     const t = selectedTemplate();
+    const m = sendMedia();
+    const mediaBlocked = !!(m && (m.missing || m.uploading));
     if (S.send.mode === 'chat') {
       b.classList.remove('btn--danger-confirm');
       label.textContent = 'Send template';
-      b.disabled = !t;
+      b.disabled = !t || mediaBlocked;
       return;
     }
     const n = S.send.selected.size;
     label.textContent = S.confirmArmed ? `Confirm — send to ${n} contact${n === 1 ? '' : 's'}` : `Send to ${n} contact${n === 1 ? '' : 's'}`;
     b.classList.toggle('btn--danger-confirm', S.confirmArmed);
-    b.disabled = !t || !n;
+    b.disabled = !t || !n || mediaBlocked;
   }
 
   async function submitSend(e) {
@@ -540,6 +699,9 @@ window.IkrisCampaigns = (function () {
     const vars = readVars();
     const missing = [...vars.header, ...vars.body].some((v) => v && v.source === 'text' && !v.value);
     if (missing) { msg.textContent = 'Fill in every “Fixed text” variable.'; return; }
+    const media = sendMedia();
+    if (media && (media.missing || media.uploading)) { msg.textContent = media.uploading ? 'Wait for the file to finish uploading.' : 'Upload the header file.'; return; }
+    if (media && !media.isDefault) { vars.media_url = media.url; vars.media_name = media.name; }
 
     const btn = $('#send-submit');
     if (S.send.mode === 'campaign') {
@@ -661,13 +823,35 @@ window.IkrisCampaigns = (function () {
     $('#tpl-form').addEventListener('submit', submitTemplate);
     $('#tpl-body').addEventListener('input', () => { renderTplExamples(); renderTplPreview(); });
     ['#tpl-header', '#tpl-footer'].forEach((s) => $(s).addEventListener('input', renderTplPreview));
+    $('#tpl-header-type').addEventListener('click', (e) => { const b = e.target.closest('[data-htype]'); if (b) setHeaderType(b.dataset.htype); });
+    $('#tpl-header-type').addEventListener('keydown', (e) => {
+      if (!['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
+      const btns = $$('#tpl-header-type [data-htype]');
+      const i = btns.findIndex((b) => b.dataset.htype === S.tplHeader);
+      const next = btns[(i + (e.key === 'ArrowRight' ? 1 : btns.length - 1)) % btns.length];
+      setHeaderType(next.dataset.htype); next.focus(); e.preventDefault();
+    });
+    $('#tpl-media-file').addEventListener('change', (e) => pickTplMedia(e.target.files[0]));
+    const drop = $('#tpl-media-drop');
+    ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('is-over'); }));
+    ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('is-over')));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); pickTplMedia(e.dataTransfer.files[0]); });
+    $('#tpl-media-info').addEventListener('click', (e) => {
+      if (e.target.closest('[data-tpl-media-change]')) $('#tpl-media-file').click();
+      if (e.target.closest('[data-tpl-media-remove]')) { S.tplMedia = null; renderTplMedia(); renderTplPreview(); }
+    });
+    $('#send-media').addEventListener('click', (e) => {
+      if (e.target.closest('[data-send-media-change]')) $('#send-media-file').click();
+      if (e.target.closest('[data-send-media-reset]') && S.send) { S.send.media = null; renderSendMedia(); renderSendPreview(); updateSendButton(); }
+    });
+    $('#send-media-file').addEventListener('change', (e) => pickSendMedia(e.target.files[0]));
     $('#tpl-name').addEventListener('input', (e) => { e.target.value = e.target.value.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, ''); });
     $('#tpl-buttons').addEventListener('input', () => { readTplButtons(); renderTplPreview(); });
     $('#tpl-buttons').addEventListener('change', (e) => { if (e.target.matches('[data-btn-type]')) { readTplButtons(); renderTplButtons(); renderTplPreview(); } });
 
     // send form
     $('#send-form').addEventListener('submit', submitSend);
-    $('#send-template').addEventListener('change', () => { S.confirmArmed = false; renderVars(); renderSendPreview(); updateSendButton(); });
+    $('#send-template').addEventListener('change', () => { S.confirmArmed = false; if (S.send) S.send.media = null; renderSendMedia(); renderVars(); renderSendPreview(); updateSendButton(); });
     $('#send-vars').addEventListener('change', (e) => { if (e.target.matches('[data-var-src]')) syncVarInputs(); renderSendPreview(); });
     $('#send-vars').addEventListener('input', renderSendPreview);
     ['#aud-dept', '#aud-tag', '#aud-source'].forEach((s) => $(s).addEventListener('change', () => { S.confirmArmed = false; renderAudience(); }));
