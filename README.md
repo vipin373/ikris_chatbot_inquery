@@ -389,3 +389,12 @@ Access: admin → all templates, campaigns and chat contacts. Department users �
 
 Flow: **New Template** → submitted to Meta (status *In review*) → once **Approved** → **Create Campaign** → pick template, fill variables (customer name / fixed text / inquiry ID), choose contacts → Send. Sent / delivered / read / replied / failed counts update from WhatsApp delivery receipts.
 Meta charges per template message (marketing > utility). Only message customers who opted in.
+
+## 1e. Contacts
+
+**Contacts** page — WhatsApp address book (`contacts.js`, table `public.contacts`, migration `004_contacts.sql`).
+- **Add Contact → Create New Contact** (name, WhatsApp number with country code, email, company, country, department, tags, notes) or **Bulk Upload (CSV)** with a downloadable sample (`Name, Country Code, Phone Number, Email, Company, Country, Tags`). Duplicates are skipped, invalid numbers reported.
+- Every WhatsApp chat is added automatically (trigger on `chat_conversations`).
+- Filter by tag / department / source, search, bulk actions (send campaign, add/remove tag, change department, opt out/in, delete) and **Quick Broadcast**.
+- Campaigns now pick recipients from Contacts; opted-out contacts are never messaged. Contacts who never chatted get a chat created when the campaign is sent (status *resolved* until they reply).
+- Access: admin → all; departments → their own department's contacts (RLS).

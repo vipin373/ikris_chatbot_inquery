@@ -50,6 +50,9 @@
     <symbol id="i-template" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.8a3.4 3.4 0 0 1 0 6.4M18 14.8c1.9.6 3.2 2.3 3.5 5.2"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 4v12M7 11l5 5 5-5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
     <symbol id="i-mark" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="currentColor"/><path d="M13 8h6v5h5v6h-5v5h-6v-5H8v-6h5z" fill="#fff"/></symbol>
   </svg>
 
@@ -174,6 +177,7 @@
         <p class="nav__label">Operations</p>
         <button type="button" class="nav__item" data-nav="dashboard" aria-current="page"><svg aria-hidden="true"><use href="#i-grid"/></svg>Dashboard</button>
         <button type="button" class="nav__item" data-nav="chat"><svg aria-hidden="true"><use href="#i-chat"/></svg>Chat<span class="nav__badge nav__badge--wa" data-chat-unread hidden></span></button>
+        <button type="button" class="nav__item" data-nav="contacts"><svg aria-hidden="true"><use href="#i-users"/></svg>Contacts</button>
         <button type="button" class="nav__item" data-nav="campaigns"><svg aria-hidden="true"><use href="#i-megaphone"/></svg>Campaigns</button>
         <button type="button" class="nav__item" data-nav="inquiries"><svg aria-hidden="true"><use href="#i-list"/></svg>Department Inquiries<span class="nav__badge" data-new-count hidden></span></button>
         <button type="button" class="nav__item" data-nav="analytics"><svg aria-hidden="true"><use href="#i-chart"/></svg>Analytics</button>
@@ -431,6 +435,77 @@
           </div>
         </section>
 
+        <!-- ===== VIEW: CONTACTS ===== -->
+        <section class="view view--contacts" data-view="contacts" hidden>
+          <div class="notice notice--info" id="ct-noaccess" hidden>Your account has not been given WhatsApp access. Please contact the administrator.</div>
+          <div id="ct-main" class="ct-main">
+            <div class="cmp-head">
+              <p class="ct-total" id="ct-total">Loading contacts…</p>
+              <div class="cmp-head__actions">
+                <button type="button" class="btn btn--outline btn--sm" id="ct-broadcast"><svg aria-hidden="true"><use href="#i-megaphone"/></svg><span class="btn__label">Quick Broadcast</span></button>
+                <div class="ct-menu-wrap">
+                  <button type="button" class="btn btn--wa btn--sm" id="ct-add" aria-haspopup="menu" aria-expanded="false" aria-controls="ct-add-menu"><svg aria-hidden="true"><use href="#i-users"/></svg>Add Contact</button>
+                  <div class="ct-menu" id="ct-add-menu" role="menu" hidden>
+                    <button type="button" role="menuitem" data-ct-new><svg aria-hidden="true"><use href="#i-plus"/></svg>Create New Contact</button>
+                    <button type="button" role="menuitem" data-ct-upload><svg aria-hidden="true"><use href="#i-upload"/></svg>Bulk Upload (CSV)</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <section class="card card--flush">
+              <div class="ct-toolbar">
+                <div class="filter">
+                  <label for="ct-bulk">Bulk action</label>
+                  <div class="ct-bulk">
+                    <select id="ct-bulk">
+                      <option value="">Select</option>
+                      <option value="broadcast">Send campaign</option>
+                      <option value="add_tag">Add tag</option>
+                      <option value="remove_tag">Remove tag</option>
+                      <option value="department">Change department</option>
+                      <option value="optout">Mark as opted out</option>
+                      <option value="optin">Mark as subscribed</option>
+                      <option value="delete">Delete</option>
+                    </select>
+                    <input id="ct-bulk-tag" list="ct-tag-list" placeholder="Tag" autocomplete="off" hidden aria-label="Tag">
+                    <select id="ct-bulk-dept" hidden aria-label="Department"></select>
+                    <button type="button" class="btn btn--outline btn--sm" id="ct-bulk-apply" disabled>Apply</button>
+                  </div>
+                </div>
+                <div class="filter"><label for="ct-tag">Filter by tag</label><select id="ct-tag"><option value="">All tags</option></select></div>
+                <div class="filter" id="ct-dept-wrap"><label for="ct-dept">Department</label><select id="ct-dept"></select></div>
+                <div class="filter"><label for="ct-source">Source</label>
+                  <select id="ct-source"><option value="">All sources</option><option value="whatsapp">WhatsApp chats</option><option value="upload">CSV upload</option><option value="manual">Added manually</option></select></div>
+                <div class="filter ct-search-f"><label for="ct-search">Search contacts</label>
+                  <div class="search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="ct-search" type="search" placeholder="Name, number, email, tag…" autocomplete="off"></div></div>
+              </div>
+              <datalist id="ct-tag-list"></datalist>
+              <div class="ct-selbar">
+                <span id="ct-selected"></span>
+                <button type="button" class="link small" id="ct-select-filtered" hidden></button>
+                <button type="button" class="link small" id="ct-clear-sel" hidden>Clear selection</button>
+              </div>
+              <div class="table-wrap">
+                <table class="table ct-table">
+                  <thead><tr>
+                    <th class="ct-check"><input type="checkbox" id="ct-check-all" aria-label="Select all on this page"></th>
+                    <th>Name</th><th>WhatsApp number</th><th>Email</th><th>Tags</th><th>Department</th><th>Created on</th><th><span class="sr-only">Edit</span></th>
+                  </tr></thead>
+                  <tbody id="ct-rows"></tbody>
+                </table>
+              </div>
+              <div class="ct-pager">
+                <span class="muted small" id="ct-pager-info"></span>
+                <div class="ct-pager__btns">
+                  <button type="button" class="btn btn--outline btn--sm" id="ct-prev">Previous</button>
+                  <button type="button" class="btn btn--outline btn--sm" id="ct-next">Next</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
         <!-- ===== VIEW: CAMPAIGNS ===== -->
         <section class="view view--campaigns" data-view="campaigns" hidden>
           <div class="notice notice--info" id="cmp-noaccess" hidden>Your account has not been given WhatsApp access. Please contact the administrator.</div>
@@ -650,8 +725,8 @@
             <div class="field__row"><label class="send-label">Contacts</label><span class="muted small" id="aud-count"></span></div>
             <div class="aud-filters">
               <select id="aud-dept" aria-label="Department"></select>
-              <select id="aud-status" aria-label="Chat status"><option value="all">All statuses</option><option value="open">Open</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select>
-              <select id="aud-active" aria-label="Last activity"><option value="0">Any time</option><option value="7">Active in last 7 days</option><option value="30">Active in last 30 days</option><option value="90">Active in last 90 days</option></select>
+              <select id="aud-tag" aria-label="Tag"><option value="">All tags</option></select>
+              <select id="aud-source" aria-label="Source"><option value="">All sources</option><option value="whatsapp">WhatsApp chats</option><option value="upload">CSV upload</option><option value="manual">Added manually</option></select>
               <input id="aud-search" type="search" placeholder="Search name or number" autocomplete="off" aria-label="Search contacts">
             </div>
             <label class="aud-all"><input type="checkbox" id="aud-all"> <span>Select all shown</span></label>
@@ -685,6 +760,78 @@
     </div>
   </div>
 
+  <!-- ============ CONTACT DIALOGS ============ -->
+  <div class="drawer-scrim" id="ct-scrim" hidden></div>
+  <div class="modal" id="ct-dialog" role="dialog" aria-modal="true" aria-labelledby="ct-dialog-title" hidden>
+    <form class="modal__card ct-card" id="ct-form" novalidate>
+      <header class="modal__head">
+        <div><h2 id="ct-dialog-title">Create New Contact</h2><p class="card__sub" id="ct-f-meta"></p></div>
+        <button type="button" class="icon-btn" data-ct-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <div class="modal__body">
+        <div class="field"><label for="ct-f-name">Name</label><input id="ct-f-name" autocomplete="off" maxlength="120"></div>
+        <div class="field">
+          <label for="ct-f-phone">WhatsApp number</label>
+          <div class="ct-phone">
+            <div id="ct-f-code-wrap" class="ct-code"><span>+</span><input id="ct-f-code" inputmode="numeric" maxlength="4" aria-label="Country code" value="91"></div>
+            <input id="ct-f-phone" inputmode="tel" placeholder="98765 43210" autocomplete="off" required>
+          </div>
+          <span class="field__hint">Country code + number. You can also paste the full number, e.g. +971 50 123 4567.</span>
+        </div>
+        <div class="field__pair">
+          <div class="field"><label for="ct-f-email">Email</label><input id="ct-f-email" type="email" autocomplete="off"></div>
+          <div class="field"><label for="ct-f-company">Company / Hospital</label><input id="ct-f-company" autocomplete="off"></div>
+        </div>
+        <div class="field__pair">
+          <div class="field"><label for="ct-f-country">Country</label><input id="ct-f-country" autocomplete="off"></div>
+          <div class="field"><label for="ct-f-dept">Department</label><select id="ct-f-dept"></select></div>
+        </div>
+        <div class="field"><label for="ct-f-tags">Tags</label><input id="ct-f-tags" list="ct-tag-list" autocomplete="off" placeholder="e.g. doctor, delhi, export-lead"><span class="field__hint">Separate tags with commas. Use them to filter contacts for campaigns.</span></div>
+        <div class="field"><label for="ct-f-notes">Notes</label><textarea id="ct-f-notes" rows="2"></textarea></div>
+        <label class="aud-all" id="ct-f-optout-wrap"><input type="checkbox" id="ct-f-optout"> <span>Opted out — never include in campaigns</span></label>
+        <p class="chat-assign__msg is-error" id="ct-f-msg" role="alert"></p>
+      </div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--ghost btn--sm ct-del" id="ct-delete" hidden><svg aria-hidden="true"><use href="#i-trash"/></svg>Delete</button>
+        <button type="button" class="btn btn--ghost btn--sm" data-ct-close>Cancel</button>
+        <button type="submit" class="btn btn--wa btn--sm" id="ct-save"><span class="btn__label">Save</span></button>
+      </footer>
+    </form>
+  </div>
+
+  <div class="modal" id="up-dialog" role="dialog" aria-modal="true" aria-labelledby="up-title" hidden>
+    <form class="modal__card modal__card--mid" id="up-form" novalidate>
+      <header class="modal__head">
+        <h2 id="up-title">Bulk Upload Contacts</h2>
+        <button type="button" class="icon-btn" data-ct-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <div class="modal__body">
+        <ol class="up-steps">
+          <li><b>Download the sample CSV</b> — <a href="#" class="link" id="up-sample"><svg aria-hidden="true"><use href="#i-download"/></svg>ikris-contacts-sample.csv</a></li>
+          <li><b>Fill in your contacts</b> using the same columns. <span class="muted">Phone Number is required; Country Code defaults to 91. Several tags: separate with ; (semicolon).</span></li>
+          <li><b>Choose the file</b> (from Excel: File → Save As → CSV).</li>
+        </ol>
+        <label class="up-drop" id="up-drop">
+          <svg aria-hidden="true"><use href="#i-upload"/></svg>
+          <span><b>Choose a CSV file</b> or drag it here</span>
+          <span class="muted small" id="up-file-name">No file chosen</span>
+          <input type="file" id="up-file" accept=".csv,text/csv,.txt">
+        </label>
+        <div class="up-preview" id="up-preview" hidden></div>
+        <div class="field__pair">
+          <div class="field"><label for="up-dept">Assign contacts to</label><select id="up-dept"></select></div>
+          <div class="field"><label for="up-tag">Add tag to all</label><input id="up-tag" list="ct-tag-list" autocomplete="off" placeholder="e.g. Expo Oct 2026"></div>
+        </div>
+        <progress id="up-progress" max="100" value="0" hidden></progress>
+        <p class="chat-assign__msg is-error" id="up-msg" role="alert"></p>
+      </div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--ghost btn--sm" data-ct-close>Cancel</button>
+        <button type="submit" class="btn btn--wa btn--sm" id="up-submit" disabled><span class="btn__label">Upload</span></button>
+      </footer>
+    </form>
+  </div>
+
   <!-- ============ TOASTS ============ -->
   <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
@@ -693,6 +840,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="chat.js"></script>
+  <script src="contacts.js"></script>
   <script src="campaigns.js"></script>
   <script src="app.js"></script>
 </body>

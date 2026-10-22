@@ -297,8 +297,9 @@ async function sendCampaign(staff: Staff, input: Record<string, any>) {
   const t = await loadTemplate(String(input.template_name ?? ""), String(input.language ?? ""));
   if (t.error) return { ok: false, error: t.error };
   const ids: string[] = Array.isArray(input.conversation_ids) ? [...new Set(input.conversation_ids.map(String))] : [];
-  if (!ids.length) return { ok: false, error: "Select at least one contact." };
-  if (ids.length > MAX_RECIPIENTS) return { ok: false, error: `A campaign can have at most ${MAX_RECIPIENTS} contacts.` };
+  const contactIds: string[] = Array.isArray(input.contact_ids) ? [...new Set(input.contact_ids.map(String))] : [];
+  if (!ids.length && !contactIds.length) return { ok: false, error: "Select at least one contact." };
+  if (ids.length + contactIds.length > MAX_RECIPIENTS) return { ok: false, error: `A campaign can have at most ${MAX_RECIPIENTS} contacts.` };
 
   const convs: Record<string, any>[] = [];
   for (let i = 0; i < ids.length; i += 200) {
@@ -306,7 +307,45 @@ async function sendCampaign(staff: Staff, input: Record<string, any>) {
     convs.push(...(data ?? []));
   }
   const allowed = convs.filter((c) => canSeeConv(staff, c));
-  if (!allowed.length) return { ok: false, error: "None of the selected contacts belong to your department." };
+  const contactOf = new Map<string, string>();   // conversation id → contact id
+  let optedOut = 0;
+
+  if (contactIds.length) {
+    const contacts: Record<string, any>[] = [];
+    for (let i = 0; i < contactIds.length; i += 200) {
+      const { data } = await admin.from("contacts").select("*").in("id", contactIds.slice(i, i + 200));
+      contacts.push(...(data ?? []));
+    }
+    const phones = contacts.map((c) => c.phone);
+    const existing = new Map<string, Record<string, any>>();
+    for (let i = 0; i < phones.length; i += 200) {
+      const { data } = await admin.from("chat_conversations").select("*").in("customer_phone", phones.slice(i, i + 200));
+      (data ?? []).forEach((c) => existing.set(c.customer_phone, c));
+    }
+    const seen = new Set(allowed.map((c) => c.id));
+    for (const ct of contacts) {
+      if (ct.opted_out) { optedOut++; continue; }
+      const conv = existing.get(ct.phone);
+      const mayUse = isAdmin(staff) || canSeeDept(staff, ct.department) || (ct.created_by ?? "") === staff.email || (conv && canSeeConv(staff, conv));
+      if (!mayUse) continue;
+      let c = conv;
+      if (!c) {
+        // First message to this contact: create the chat (it stays "resolved" until the customer replies).
+        const { data, error: e2 } = await admin.from("chat_conversations").insert({
+          customer_phone: ct.phone,
+          customer_name: ct.name,
+          department: ct.department ?? (isAdmin(staff) ? null : staff.departments[0] ?? null),
+          status: "resolved",
+        }).select("*").single();
+        if (e2) {
+          const again = await admin.from("chat_conversations").select("*").eq("customer_phone", ct.phone).maybeSingle();
+          c = again.data ?? undefined;
+        } else c = data;
+      }
+      if (c && !seen.has(c.id)) { seen.add(c.id); allowed.push(c); contactOf.set(c.id, ct.id); }
+    }
+  }
+  if (!allowed.length) return { ok: false, error: optedOut ? "All selected contacts have opted out." : "None of the selected contacts belong to your department." };
 
   const department = isAdmin(staff) ? clean(input.department, 200) : staff.departments[0] ?? null;
   const vars = { body: input.variables?.body ?? [], header: input.variables?.header ?? [] };
@@ -323,7 +362,7 @@ async function sendCampaign(staff: Staff, input: Record<string, any>) {
   if (error || !campaign) return { ok: false, error: "Could not create the campaign." };
 
   await admin.from("campaign_recipients").insert(allowed.map((c) => ({
-    campaign_id: campaign.id, conversation_id: c.id, phone: c.customer_phone, customer_name: c.customer_name,
+    campaign_id: campaign.id, conversation_id: c.id, contact_id: contactOf.get(c.id) ?? null, phone: c.customer_phone, customer_name: c.customer_name,
   })));
 
   // Keep sending after the response is returned.
@@ -335,7 +374,7 @@ async function sendCampaign(staff: Staff, input: Record<string, any>) {
   const rt = (globalThis as any).EdgeRuntime;
   if (rt?.waitUntil) rt.waitUntil(job); else await job;
 
-  return { ok: true, campaign, skipped: ids.length - allowed.length };
+  return { ok: true, campaign, skipped: ids.length + contactIds.length - allowed.length, opted_out: optedOut };
 }
 
 async function sendTemplateToChat(staff: Staff, input: Record<string, any>) {

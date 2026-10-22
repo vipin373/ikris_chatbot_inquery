@@ -445,7 +445,10 @@ window.IkrisCampaigns = (function () {
     if (!t) { $('#send-preview').innerHTML = bubbleHtml({ body: '' }); return; }
     const vars = readVars();
     let conv = S.send && S.send.conv;
-    if (!conv && S.send && S.send.selected.size) conv = (chat().conversations() || []).find((c) => S.send.selected.has(c.id));
+    if (!conv && S.send && S.send.selected.size && window.IkrisContacts) {
+      const ct = window.IkrisContacts.get(Array.from(S.send.selected)[0]);
+      if (ct) conv = { customer_name: ct.name, inquiry_id: null };
+    }
     const fill = (text, list) => String(text || '').replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => {
       const v = resolveForPreview(list[Number(n) - 1], conv);
       return v || m;
@@ -455,35 +458,39 @@ window.IkrisCampaigns = (function () {
   }
 
   /* audience */
+  const contactsApi = () => window.IkrisContacts;
+
   function setupAudience() {
     const deptSel = $('#aud-dept');
     const opts = chat() ? chat().departmentOptions() : [];
     if (isAdmin()) {
-      deptSel.innerHTML = '<option value="">All departments</option><option value="__none">Not yet routed</option>' + opts.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
+      deptSel.innerHTML = '<option value="">All departments</option><option value="__none">No department</option>' + opts.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('');
       deptSel.disabled = false;
     } else {
-      deptSel.innerHTML = opts.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('') || '<option value="">My department</option>';
+      deptSel.innerHTML = (opts.length > 1 ? '<option value="">All my departments</option>' : '') + opts.map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join('') || '<option value="">My department</option>';
       deptSel.disabled = opts.length <= 1;
     }
-    $('#aud-status').value = 'all';
-    $('#aud-active').value = '0';
+    const tags = contactsApi() ? contactsApi().tags() : [];
+    $('#aud-tag').innerHTML = '<option value="">All tags</option>' + tags.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    $('#aud-source').value = '';
     $('#aud-search').value = '';
     renderAudience();
   }
 
   function audienceList() {
-    const all = chat() ? chat().conversations() : [];
+    const all = contactsApi() ? contactsApi().list() : [];
     const dep = $('#aud-dept').value;
-    const st = $('#aud-status').value;
-    const days = Number($('#aud-active').value);
+    const tag = $('#aud-tag').value;
+    const src = $('#aud-source').value;
     const q = $('#aud-search').value.trim().toLowerCase();
-    const since = days ? Date.now() - days * 24 * 3600 * 1000 : 0;
+    const qd = q.replace(/\D/g, '');
     return all.filter((c) =>
-      (!dep || (dep === '__none' ? !norm(c.department) : chat().convMatches(c, dep))) &&
-      (st === 'all' || c.status === st) &&
-      (!since || new Date(c.last_message_at || c.created_at).getTime() >= since) &&
-      (!q || `${c.customer_name || ''} ${c.customer_phone} ${phoneLabel(c.customer_phone)}`.toLowerCase().includes(q))
-    ).sort((a, b) => String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
+      !c.opted_out &&
+      (!dep || (dep === '__none' ? !norm(c.department) : chat().convMatches({ department: c.department, shared_departments: [] }, dep))) &&
+      (!tag || (c.tags || []).includes(tag)) &&
+      (!src || c.source === src) &&
+      (!q || `${c.name || ''} ${c.email || ''} ${(c.tags || []).join(' ')}`.toLowerCase().includes(q) || (qd.length >= 3 && c.phone.includes(qd)))
+    );
   }
 
   function renderAudience() {
@@ -494,11 +501,11 @@ window.IkrisCampaigns = (function () {
     $('#aud-list').innerHTML = shown.length ? shown.map((c) => `
       <li><label class="aud-item">
         <input type="checkbox" data-aud="${esc(c.id)}"${sel.has(c.id) ? ' checked' : ''}>
-        <span class="aud-item__name">${esc(c.customer_name || 'Unknown')}</span>
-        <span class="aud-item__phone mono">${esc(phoneLabel(c.customer_phone))}</span>
-        <span class="aud-item__dept">${esc(chat().deptDisplay(c.department))}</span>
+        <span class="aud-item__name">${esc(c.name || 'Unknown')}</span>
+        <span class="aud-item__phone mono">${esc(phoneLabel(c.phone))}</span>
+        <span class="aud-item__dept">${esc(c.department ? chat().deptDisplay(c.department) : 'No department')}${(c.tags || []).length ? ` · ${esc(c.tags.join(', '))}` : ''}</span>
       </label></li>`).join('') + (list.length > shown.length ? `<li class="muted small aud-more">Showing the first ${shown.length} of ${list.length}. Narrow the filters to see the rest.</li>` : '')
-      : '<li class="cmp-empty small">No contacts match these filters.</li>';
+      : `<li class="cmp-empty small">${(contactsApi() && contactsApi().list().length) ? 'No contacts match these filters.' : 'No contacts yet — add them on the Contacts page.'}</li>`;
     const allChecked = list.length > 0 && list.every((c) => sel.has(c.id));
     $('#aud-all').checked = allChecked;
     $('#aud-all').indeterminate = !allChecked && list.some((c) => sel.has(c.id));
@@ -545,13 +552,13 @@ window.IkrisCampaigns = (function () {
         const dep = $('#aud-dept').value;
         const res = await invoke({
           action: 'send_campaign', name, template_name: t.name, language: t.language, variables: vars,
-          conversation_ids: Array.from(S.send.selected), department: dep && dep !== '__none' ? dep : null
+          contact_ids: Array.from(S.send.selected), department: dep && dep !== '__none' ? dep : null
         });
         closeDialogs();
         S.tab = 'campaigns';
         await loadCampaigns();
         renderAll();
-        ctx.toast({ type: 'success', title: `Campaign “${name}” started.`, body: `<p class="muted small" style="margin-top:4px">Sending to ${num(res.campaign && res.campaign.total)} contacts. Progress updates here automatically.${res.skipped ? ` ${res.skipped} contact(s) outside your department were skipped.` : ''}</p>`, timeout: 7000 });
+        ctx.toast({ type: 'success', title: `Campaign “${name}” started.`, body: `<p class="muted small" style="margin-top:4px">Sending to ${num(res.campaign && res.campaign.total)} contacts. Progress updates here automatically.${res.skipped ? ` ${res.skipped} contact(s) were skipped (opted out or outside your department).` : ''}</p>`, timeout: 7000 });
       } catch (err) {
         msg.textContent = err.message;
         S.confirmArmed = false;
@@ -663,7 +670,7 @@ window.IkrisCampaigns = (function () {
     $('#send-template').addEventListener('change', () => { S.confirmArmed = false; renderVars(); renderSendPreview(); updateSendButton(); });
     $('#send-vars').addEventListener('change', (e) => { if (e.target.matches('[data-var-src]')) syncVarInputs(); renderSendPreview(); });
     $('#send-vars').addEventListener('input', renderSendPreview);
-    ['#aud-dept', '#aud-status', '#aud-active'].forEach((s) => $(s).addEventListener('change', () => { S.confirmArmed = false; renderAudience(); }));
+    ['#aud-dept', '#aud-tag', '#aud-source'].forEach((s) => $(s).addEventListener('change', () => { S.confirmArmed = false; renderAudience(); }));
     $('#aud-search').addEventListener('input', debounce(renderAudience, 150));
     $('#aud-list').addEventListener('change', (e) => {
       const box = e.target.closest('[data-aud]');
@@ -737,5 +744,14 @@ window.IkrisCampaigns = (function () {
     openSend({ mode: 'chat', conv, onSent });
   }
 
-  return { init, start, stop, onShow, openTemplatePicker };
+  /** From the Contacts page: start a campaign with these contacts pre-selected. */
+  function openCampaignFor(contactIds) {
+    ctx.showView('campaigns');
+    openSend({ mode: 'campaign' });
+    contactIds.forEach((id) => S.send.selected.add(id));
+    renderAudience();
+    renderSendPreview();
+  }
+
+  return { init, start, stop, onShow, openTemplatePicker, openCampaignFor };
 })();
