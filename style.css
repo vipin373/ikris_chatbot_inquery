@@ -1039,3 +1039,10 @@ td.cmp-empty { display: table-cell; }
 .send-media__ico { width: 52px; height: 40px; border-radius: 4px; background: #F0F2F5; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--text-2); flex: none; }
 .send-media__text { display: grid; min-width: 0; flex: 1 1 140px; }
 .send-media__text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+
+/* customer files (audio / video / loading) */
+.msg__att audio { display: block; width: 260px; max-width: 100%; }
+.msg__att video { display: block; max-width: 260px; max-height: 260px; border-radius: 8px; background: #000; }
+.msg__dl { font-size: 12px; display: inline-block; margin-top: 2px; }
+.msg__file--off { color: var(--muted); gap: 8px; }
+@media (max-width: 480px) { .msg__att img, .msg__att video { max-width: 100%; } }

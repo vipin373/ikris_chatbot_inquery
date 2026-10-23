@@ -212,6 +212,29 @@ window.IkrisChat = (() => {
     S.messages.set(id, data || []);
   }
 
+  // Asks the server to save a file the customer sent on WhatsApp; realtime then delivers the update.
+  async function fetchCustomerFile(m) {
+    S.mediaReq = S.mediaReq || new Set();
+    S.mediaFailed = S.mediaFailed || new Map();
+    if (S.mediaReq.has(m.id)) return;
+    S.mediaReq.add(m.id);
+    try {
+      const { data, error } = await client().functions.invoke('chat-media', { body: { message_id: m.id } });
+      let res = data;
+      if (error) { try { res = await error.context.json(); } catch (_) { res = null; } }
+      if (res && res.ok && res.path) {
+        const list = S.messages.get(m.conversation_id) || [];
+        const cur = list.find((x) => x.id === m.id);
+        if (cur) Object.assign(cur, { attachment_path: res.path, attachment_name: res.name, attachment_type: res.type });
+      } else {
+        S.mediaFailed.set(m.id, (res && res.error) || 'File could not be loaded.');
+      }
+    } catch (_) {
+      S.mediaFailed.set(m.id, 'File could not be loaded.');
+    }
+    if (S.selected === m.conversation_id) renderMessages(false);
+  }
+
   async function signedUrl(path) {
     if (S.signed.has(path)) return S.signed.get(path);
     const { data } = await client().storage.from('chat-attachments').createSignedUrl(path, 60 * 60);
@@ -447,7 +470,7 @@ window.IkrisChat = (() => {
         <div class="msg ${out ? 'msg--out' : 'msg--in'}${m.sender_type === 'bot' ? ' msg--bot' : ''}${m.sender_type === 'system' ? ' msg--system' : ''}" data-msg="${esc(m.id)}">
           <div class="msg__bubble">
             <div class="msg__who">${esc(who)}${m.sender_type === 'bot' ? ' <span class="msg__tag">Bot</span>' : ''}${m.sender_type === 'system' ? ' <span class="msg__tag msg__tag--inq">Inquiry</span>' : ''}${m.template_name ? ` <span class="msg__tag msg__tag--tpl" title="WhatsApp template: ${esc(m.template_name)}">Template</span>` : ''}</div>
-            ${m.attachment_url || m.attachment_path ? `<div class="msg__att" data-att="${esc(m.id)}"></div>` : ''}
+            ${m.attachment_url || m.attachment_path || m.wa_media_id ? `<div class="msg__att" data-att="${esc(m.id)}"></div>` : ''}
             ${m.body ? `<div class="msg__text">${linkify(esc(m.body))}</div>` : ''}
             <div class="msg__foot"><time datetime="${esc(m.created_at)}">${esc(time(d))}</time>${tick}</div>
             ${m.delivery_status === 'failed' || m.delivery_status === 'not_sent'
@@ -458,14 +481,26 @@ window.IkrisChat = (() => {
     box.innerHTML = parts.join('');
     // Attachments (signed URLs for files sent from the dashboard)
     for (const m of list) {
-      if (!m.attachment_url && !m.attachment_path) continue;
+      if (!m.attachment_url && !m.attachment_path && !m.wa_media_id) continue;
       const el = box.querySelector(`[data-att="${CSS.escape(m.id)}"]`);
       if (!el) continue;
+      if (!m.attachment_path && !m.attachment_url) {
+        // File the customer sent on WhatsApp that is not saved yet — fetch it now.
+        const failed = S.mediaFailed && S.mediaFailed.get(m.id);
+        el.innerHTML = failed
+          ? `<span class="msg__file msg__file--off">📎 ${esc(failed)}</span>`
+          : '<span class="msg__file msg__file--off"><span class="spinner" aria-hidden="true"></span> Loading file…</span>';
+        if (!failed) fetchCustomerFile(m);
+        continue;
+      }
       const url = m.attachment_path ? await signedUrl(m.attachment_path) : m.attachment_url;
       const name = m.attachment_name || (m.attachment_path || m.attachment_url || '').split('/').pop().split('?')[0] || 'Attachment';
       if (!url) { el.innerHTML = `<span class="msg__file">📎 ${esc(name)} (unavailable)</span>`; continue; }
-      el.innerHTML = isImage(m.attachment_type, name)
-        ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer"><img src="${esc(url)}" alt="${esc(name)}" loading="lazy"></a>`
+      const type = m.attachment_type || '';
+      el.innerHTML = isImage(type, name)
+        ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open full size"><img src="${esc(url)}" alt="${esc(name)}" loading="lazy"></a>`
+        : /^audio\//.test(type) ? `<audio controls preload="none" src="${esc(url)}"></audio><a class="msg__dl" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Download</a>`
+        : /^video\//.test(type) ? `<video controls preload="metadata" src="${esc(url)}"></video>`
         : `<a class="msg__file" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true"><use href="#i-file"/></svg><span>${esc(name)}</span></a>`;
     }
     if (scrollToEnd || nearBottom) box.scrollTop = box.scrollHeight;

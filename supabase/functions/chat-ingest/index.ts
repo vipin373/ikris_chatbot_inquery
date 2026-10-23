@@ -13,6 +13,7 @@
 //    "attachment_url": "https://…",      // optional
 //    "attachment_type": "image/jpeg",    // optional
 //    "attachment_name": "prescription.pdf", // optional
+//    "media_id": "1949151399378268",     // optional — WhatsApp media id; the file is saved for staff
 //    "wa_message_id": "wamid.XXX",       // optional, prevents duplicates
 //    "timestamp": "2026-10-01T10:00:00Z",// optional
 //    "department": "Export",             // optional — routes the chat
@@ -130,7 +131,7 @@ async function handleOne(item: Record<string, unknown>) {
 
   const text = clean(item.text ?? item.message ?? item.body, 8000);
   const attachmentUrl = clean(item.attachment_url ?? item.media_url, 2000);
-  if (!text && !attachmentUrl) return { ok: true, conversation_id: conversationId, message_id: null };
+  if (!text && !attachmentUrl && !clean(item.media_id, 100)) return { ok: true, conversation_id: conversationId, message_id: null };
 
   const ts = clean(item.timestamp, 64);
   const created = ts && !Number.isNaN(Date.parse(ts)) ? new Date(ts).toISOString() : new Date().toISOString();
@@ -144,6 +145,7 @@ async function handleOne(item: Record<string, unknown>) {
     attachment_type: clean(item.attachment_type ?? item.media_type, 200),
     attachment_name: clean(item.attachment_name ?? item.file_name, 300),
     wa_message_id: clean(item.wa_message_id, 200),
+    wa_media_id: clean(item.media_id, 100),
     delivery_status: direction === "in" ? "received" : "sent",
     is_read: direction === "out",
     created_at: created,
@@ -154,7 +156,27 @@ async function handleOne(item: Record<string, unknown>) {
     if (msgErr.code === "23505") return { ok: true, duplicate: true, conversation_id: conversationId };
     return { ok: false, error: msgErr.message };
   }
+  if (row.wa_media_id) keepFile(msg.id);
   return { ok: true, conversation_id: conversationId, message_id: msg.id };
+}
+
+/** Saves the customer's file in the background (chat-media downloads it via n8n). */
+function keepFile(messageId: string) {
+  const job = (async () => {
+    try {
+      const res = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/chat-media`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ikris-secret": await ingestSecret() },
+        body: JSON.stringify({ message_id: messageId }),
+      });
+      if (!res.ok) console.error("chat-media", res.status, (await res.text()).slice(0, 300));
+    } catch (e) {
+      console.error("chat-media", e);
+    }
+  })();
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(job);
 }
 
 Deno.serve(async (req) => {
