@@ -1046,3 +1046,18 @@ td.cmp-empty { display: table-cell; }
 .msg__dl { font-size: 12px; display: inline-block; margin-top: 2px; }
 .msg__file--off { color: var(--muted); gap: 8px; }
 @media (max-width: 480px) { .msg__att img, .msg__att video { max-width: 100%; } }
+
+/* attachment card + open / download buttons */
+.att-card { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,.8); border: 1px solid var(--border); min-width: 220px; max-width: 300px; }
+.att-card__ico { flex: none; width: 34px; height: 40px; border-radius: 4px; display: grid; place-items: center; background: #EEF2F8; color: var(--navy-600); font-size: 11px; font-weight: 700; }
+.att-card__ico svg { width: 20px; height: 20px; }
+.att-card__ico--pdf { background: #E5483D; color: #fff; }
+.att-card__name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.att-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.att-btn { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--white); color: var(--text-2); font-size: 12.5px; font-weight: 500; text-decoration: none; }
+.att-btn svg { width: 14px; height: 14px; }
+.att-btn:hover { border-color: var(--navy-600); color: var(--navy-600); }
+.att-btn--dl { background: var(--navy); border-color: var(--navy); color: var(--white); }
+.att-btn--dl:hover { background: var(--navy-700); color: var(--white); }
+.att-btn:focus-visible { outline: 2px solid var(--navy-600); outline-offset: 2px; }
+@media (max-width: 480px) { .att-card { min-width: 0; } }

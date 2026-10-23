@@ -235,12 +235,35 @@ window.IkrisChat = (() => {
     if (S.selected === m.conversation_id) renderMessages(false);
   }
 
-  async function signedUrl(path) {
-    if (S.signed.has(path)) return S.signed.get(path);
-    const { data } = await client().storage.from('chat-attachments').createSignedUrl(path, 60 * 60);
+  async function signedUrl(path, downloadName) {
+    const key = downloadName ? `${path}|dl|${downloadName}` : path;
+    if (S.signed.has(key)) return S.signed.get(key);
+    const opts = downloadName ? { download: downloadName } : undefined;
+    const { data } = await client().storage.from('chat-attachments').createSignedUrl(path, 60 * 60, opts);
     const url = data && data.signedUrl;
-    if (url) S.signed.set(path, url);
+    if (url) S.signed.set(key, url);
     return url || '';
+  }
+
+  /* A clear file name for downloads, e.g. "Prescription_Rahim-Samnani_2026-10-23_1715.jpg". */
+  const GENERIC_NAME = /^(image|voice-message|video|file)\.[a-z0-9]+$/i;
+  function downloadName(m, name) {
+    const ext = (String(name || '').match(/\.([a-z0-9]{1,5})$/i) || [])[1]
+      || ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'application/pdf': 'pdf', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'video/mp4': 'mp4' })[(m.attachment_type || '').split(';')[0]] || 'bin';
+    const conv = S.convs.get(m.conversation_id) || {};
+    const who = String(conv.customer_name || conv.customer_phone || 'Customer').normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-') || 'Customer';
+    const d = new Date(m.created_at);
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}`;
+    const type = m.attachment_type || '';
+    if (name && !GENERIC_NAME.test(name)) {
+      // Keep the customer's own file name, prefixed with who sent it.
+      const base = String(name).replace(/[\\/:*?"<>|]+/g, ' ').trim();
+      return m.direction === 'in' ? `${who}_${base}` : base;
+    }
+    const kind = /^image\//.test(type) ? (m.direction === 'in' ? 'Prescription' : 'Image')
+      : /^audio\//.test(type) ? 'Voice-note' : /^video\//.test(type) ? 'Video' : 'Document';
+    return `${kind}_${who}_${stamp}.${ext}`;
   }
 
   /* ---------------- filtering ---------------- */
@@ -494,14 +517,25 @@ window.IkrisChat = (() => {
         continue;
       }
       const url = m.attachment_path ? await signedUrl(m.attachment_path) : m.attachment_url;
-      const name = m.attachment_name || (m.attachment_path || m.attachment_url || '').split('/').pop().split('?')[0] || 'Attachment';
+      const name = m.attachment_name || (m.attachment_path || m.attachment_url || '').split('/').pop().split('?')[0].replace(/^in-[0-9a-f-]{36}-/, '') || 'Attachment';
       if (!url) { el.innerHTML = `<span class="msg__file">📎 ${esc(name)} (unavailable)</span>`; continue; }
       const type = m.attachment_type || '';
+      const saveAs = downloadName(m, name);
+      const dl = m.attachment_path ? await signedUrl(m.attachment_path, saveAs) : url;
+      const dlAttr = m.attachment_path ? '' : ` download="${esc(saveAs)}"`;
+      const actions = `<div class="att-actions">
+          <a class="att-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open in a new tab"><svg aria-hidden="true"><use href="#i-external"/></svg>Open</a>
+          <a class="att-btn att-btn--dl" href="${esc(dl)}"${dlAttr} title="Download as ${esc(saveAs)}"><svg aria-hidden="true"><use href="#i-download"/></svg>Download</a>
+        </div>`;
+      const pdf = /pdf/i.test(type) || /\.pdf$/i.test(name);
       el.innerHTML = isImage(type, name)
-        ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open full size"><img src="${esc(url)}" alt="${esc(name)}" loading="lazy"></a>`
-        : /^audio\//.test(type) ? `<audio controls preload="none" src="${esc(url)}"></audio><a class="msg__dl" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Download</a>`
-        : /^video\//.test(type) ? `<video controls preload="metadata" src="${esc(url)}"></video>`
-        : `<a class="msg__file" href="${esc(url)}" target="_blank" rel="noopener noreferrer"><svg aria-hidden="true"><use href="#i-file"/></svg><span>${esc(name)}</span></a>`;
+        ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open full size"><img src="${esc(url)}" alt="${esc(name)}" loading="lazy"></a>${actions}`
+        : /^audio\//.test(type) ? `<audio controls preload="none" src="${esc(url)}"></audio>${actions}`
+        : /^video\//.test(type) ? `<video controls preload="metadata" src="${esc(url)}"></video>${actions}`
+        : `<div class="att-card">
+            <span class="att-card__ico${pdf ? ' att-card__ico--pdf' : ''}" aria-hidden="true">${pdf ? 'PDF' : '<svg><use href="#i-file"/></svg>'}</span>
+            <span class="att-card__name" title="${esc(name)}">${esc(name)}</span>
+          </div>${actions}`;
     }
     if (scrollToEnd || nearBottom) box.scrollTop = box.scrollHeight;
   }
