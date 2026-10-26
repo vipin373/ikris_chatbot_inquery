@@ -6,11 +6,12 @@
   <meta name="robots" content="noindex, nofollow">
   <meta name="description" content="Ikris Pharma Network internal Department Inquiry Dashboard">
   <title>Department Inquiry Dashboard · Ikris Pharma Network</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23172A5C'/%3E%3Cpath d='M13 8h6v5h5v6h-5v5h-6v-5H8v-6h5z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233D2E4F'/%3E%3Cpath d='M13 8h6v5h5v6h-5v5h-6v-5H8v-6h5z' fill='%23fff'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261026a">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=20261026b">
+  <link rel="stylesheet" href="theme.css?v=20261026b">
 </head>
 <body>
 
@@ -170,6 +171,9 @@
           <svg class="brand__mark" aria-hidden="true"><use href="#i-mark"/></svg>
           <span class="brand__name">IKRIS PHARMA<br>NETWORK</span>
         </div>
+        <button type="button" class="icon-btn sidebar__collapse" id="sidebar-collapse" aria-label="Collapse navigation" aria-pressed="false" title="Collapse navigation">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M15 6l-6 6 6 6"/></svg>
+        </button>
         <button type="button" class="icon-btn sidebar__close" data-close-sidebar aria-label="Close navigation">
           <svg aria-hidden="true"><use href="#i-close"/></svg>
         </button>
@@ -177,16 +181,16 @@
 
       <nav class="nav">
         <p class="nav__label">Operations</p>
-        <button type="button" class="nav__item" data-nav="dashboard" aria-current="page"><svg aria-hidden="true"><use href="#i-grid"/></svg>Dashboard</button>
-        <button type="button" class="nav__item" data-nav="chat"><svg aria-hidden="true"><use href="#i-chat"/></svg>Chat<span class="nav__badge nav__badge--wa" data-chat-unread hidden></span></button>
-        <button type="button" class="nav__item" data-nav="contacts"><svg aria-hidden="true"><use href="#i-users"/></svg>Contacts</button>
-        <button type="button" class="nav__item" data-nav="campaigns"><svg aria-hidden="true"><use href="#i-megaphone"/></svg>Campaigns</button>
-        <button type="button" class="nav__item" data-nav="inquiries"><svg aria-hidden="true"><use href="#i-list"/></svg>Department Inquiries<span class="nav__badge" data-new-count hidden></span></button>
-        <button type="button" class="nav__item" data-nav="analytics"><svg aria-hidden="true"><use href="#i-chart"/></svg>Analytics</button>
-        <button type="button" class="nav__item" data-nav="integrations" hidden><svg aria-hidden="true"><use href="#i-plug"/></svg>API Integrations</button>
+        <button type="button" class="nav__item" data-nav="dashboard" aria-current="page" data-tip="Dashboard"><svg aria-hidden="true"><use href="#i-grid"/></svg><span class="nav__text">Dashboard</span></button>
+        <button type="button" class="nav__item" data-nav="chat" data-tip="Chat"><svg aria-hidden="true"><use href="#i-chat"/></svg><span class="nav__text">Chat</span><span class="nav__badge nav__badge--wa" data-chat-unread hidden></span></button>
+        <button type="button" class="nav__item" data-nav="contacts" data-tip="Contacts"><svg aria-hidden="true"><use href="#i-users"/></svg><span class="nav__text">Contacts</span></button>
+        <button type="button" class="nav__item" data-nav="campaigns" data-tip="Campaigns"><svg aria-hidden="true"><use href="#i-megaphone"/></svg><span class="nav__text">Campaigns</span></button>
+        <button type="button" class="nav__item" data-nav="inquiries" data-tip="Department Inquiries"><svg aria-hidden="true"><use href="#i-list"/></svg><span class="nav__text">Department Inquiries</span><span class="nav__badge" data-new-count hidden></span></button>
+        <button type="button" class="nav__item" data-nav="analytics" data-tip="Analytics"><svg aria-hidden="true"><use href="#i-chart"/></svg><span class="nav__text">Analytics</span></button>
+        <button type="button" class="nav__item" data-nav="integrations" hidden data-tip="API Integrations"><svg aria-hidden="true"><use href="#i-plug"/></svg><span class="nav__text">API Integrations</span></button>
         <p class="nav__label">Account</p>
-        <button type="button" class="nav__item" data-nav="settings"><svg aria-hidden="true"><use href="#i-settings"/></svg>Settings</button>
-        <button type="button" class="nav__item" data-action="logout"><svg aria-hidden="true"><use href="#i-logout"/></svg>Logout</button>
+        <button type="button" class="nav__item" data-nav="settings" data-tip="Settings"><svg aria-hidden="true"><use href="#i-settings"/></svg><span class="nav__text">Settings</span></button>
+        <button type="button" class="nav__item" data-action="logout" data-tip="Logout"><svg aria-hidden="true"><use href="#i-logout"/></svg><span class="nav__text">Logout</span></button>
       </nav>
 
       <div class="sidebar__foot">
@@ -1068,10 +1072,11 @@ Content-Type: application/json
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="chat.js?v=20261026a"></script>
-  <script src="contacts.js?v=20261026a"></script>
-  <script src="campaigns.js?v=20261026a"></script>
-  <script src="integrations.js?v=20261026a"></script>
-  <script src="app.js?v=20261026a"></script>
+  <script src="chat.js?v=20261026b"></script>
+  <script src="contacts.js?v=20261026b"></script>
+  <script src="campaigns.js?v=20261026b"></script>
+  <script src="integrations.js?v=20261026b"></script>
+  <script src="app.js?v=20261026b"></script>
+  <script src="ui.js?v=20261026b"></script>
 </body>
 </html>

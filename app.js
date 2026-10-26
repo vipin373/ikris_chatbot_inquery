@@ -184,7 +184,7 @@
       const cls = g === 'none' ? '' : ` badge--${g}`;
       return `<span class="badge${cls}">${Fmt.esc(Fmt.label(value))}</span>`;
     },
-    colors: { new: '#2A4A92', pending: '#ED9B00', completed: '#2E7D32', none: '#98A2B3' }
+    colors: { new: '#7A68A0', pending: '#C98A1E', completed: '#4F7D55', none: '#B9AAB5' }
   };
 
   /* ===================================================================
@@ -344,6 +344,7 @@
     max: 4,
     toast({ type = 'info', eyebrow = '', title = '', body = '', actions = [], timeout = 7000 }) {
       const wrap = $('#toasts');
+      wrap.querySelectorAll('.toast.is-leaving').forEach((t) => t.remove());
       while (wrap.children.length >= Notify.max) wrap.firstElementChild.remove();
 
       const el = document.createElement('div');
@@ -368,8 +369,20 @@
       });
 
       let timer = null;
-      const dismiss = () => { clearTimeout(timer); el.remove(); };
-      const arm = () => { if (timeout) timer = setTimeout(dismiss, timeout); };
+      let gone = false;
+      const dismiss = () => {
+        if (gone) return;
+        gone = true;
+        clearTimeout(timer);
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduce) { el.remove(); return; }
+        el.classList.add('is-leaving');
+        setTimeout(() => el.remove(), 200);
+      };
+      const bar = timeout ? document.createElement('span') : null;
+      if (bar) { bar.className = 'toast__bar'; bar.setAttribute('aria-hidden', 'true'); el.style.setProperty('--toast-ms', `${timeout}ms`); el.appendChild(bar); }
+      const restartBar = () => { if (!bar) return; bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = ''; };
+      const arm = () => { if (timeout) { restartBar(); timer = setTimeout(dismiss, timeout); } };
       el.addEventListener('mouseenter', () => clearTimeout(timer));
       el.addEventListener('mouseleave', arm);
       el.addEventListener('focusin', () => clearTimeout(timer));
@@ -1359,22 +1372,43 @@
   const Charts = {
     inst: {},
     ready: () => typeof window.Chart !== 'undefined',
-    navy: '#172A5C',
+    navy: '#5D4A78',
+    bar: '#9C8BB8',
+    barHover: '#5D4A78',
 
     setup() {
       if (!Charts.ready()) return;
       const d = window.Chart.defaults;
-      d.font.family = '"IBM Plex Sans", system-ui, sans-serif';
+      d.font.family = '"Plus Jakarta Sans", "IBM Plex Sans", system-ui, sans-serif';
       d.font.size = 12;
-      d.color = '#667085';
-      d.borderColor = '#E3E8F1';
+      d.color = '#6B5A70';
+      d.borderColor = 'rgba(48, 38, 59, .08)';
       d.plugins.legend.display = false;
-      d.plugins.tooltip.backgroundColor = '#101828';
-      d.plugins.tooltip.padding = 10;
-      d.plugins.tooltip.cornerRadius = 6;
+      d.plugins.tooltip.backgroundColor = 'rgba(48, 38, 59, .94)';
+      d.plugins.tooltip.titleColor = '#FFFAF3';
+      d.plugins.tooltip.bodyColor = '#F1EAF4';
+      d.plugins.tooltip.padding = 12;
+      d.plugins.tooltip.cornerRadius = 10;
+      d.plugins.tooltip.caretSize = 6;
+      d.plugins.tooltip.titleFont = { weight: '600' };
       d.plugins.tooltip.displayColors = false;
       d.maintainAspectRatio = false;
-      d.animation = false;
+      // Entrance animation when a chart is first drawn; data refreshes use update('none') and stay instant.
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce) d.animation = false;
+      else { d.animation.duration = 800; d.animation.easing = 'easeOutQuart'; }
+    },
+
+    /** Draws a line chart point by point on first render (Chart.js "progressive line" pattern). */
+    lineDraw(points) {
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce) return {};
+      const per = 900 / Math.max(points, 1);
+      const prevY = (c) => (c.index === 0 ? c.chart.scales.y.getPixelForValue(0) : c.chart.getDatasetMeta(c.datasetIndex).data[c.index - 1].getProps(['y'], true).y);
+      return {
+        x: { type: 'number', easing: 'linear', duration: per, from: NaN, delay(c) { if (c.type !== 'data' || c.xStarted) return 0; c.xStarted = true; return c.index * per; } },
+        y: { type: 'number', easing: 'linear', duration: per, from: prevY, delay(c) { if (c.type !== 'data' || c.yStarted) return 0; c.yStarted = true; return c.index * per; } }
+      };
     },
 
     renderFor(view) {
@@ -1440,20 +1474,31 @@
             label: 'Inquiries',
             data: Array.from(counts.values()),
             borderColor: Charts.navy,
-            backgroundColor: 'rgba(23, 42, 92, .08)',
+            backgroundColor: (c) => {
+              const area = c.chart.chartArea;
+              if (!area) return 'rgba(168, 155, 190, .18)';
+              const g = c.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+              g.addColorStop(0, 'rgba(142, 123, 170, .38)');
+              g.addColorStop(1, 'rgba(219, 195, 171, 0)');
+              return g;
+            },
             fill: true,
             cubicInterpolationMode: 'monotone',
-            pointRadius: 2.5,
-            pointHoverRadius: 5,
-            pointBackgroundColor: Charts.navy,
-            borderWidth: 2
+            pointRadius: 0,
+            pointHoverRadius: 6,
+            pointHitRadius: 12,
+            pointBackgroundColor: '#FFFAF3',
+            pointBorderColor: Charts.navy,
+            pointHoverBorderWidth: 3,
+            borderWidth: 2.5
           }]
         },
         options: {
           interaction: { mode: 'index', intersect: false },
+          animations: Charts.lineDraw(30),
           scales: {
-            x: { grid: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0 } },
-            y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#EEF1F6' } }
+            x: { grid: { display: false }, border: { display: false }, ticks: { maxTicksLimit: 8, maxRotation: 0 } },
+            y: { beginAtZero: true, border: { display: false }, ticks: { precision: 0, padding: 8 }, grid: { color: 'rgba(48, 38, 59, .07)', drawTicks: false } }
           },
           plugins: { tooltip: { callbacks: { label: (c) => ` ${c.parsed.y} ${c.parsed.y === 1 ? 'inquiry' : 'inquiries'}` } } }
         }
@@ -1463,12 +1508,13 @@
     hbar(id, labels, values, colors) {
       Charts.upsert(id, {
         type: 'bar',
-        data: { labels, datasets: [{ data: values, backgroundColor: colors || Charts.navy, borderRadius: 3, maxBarThickness: 22 }] },
+        data: { labels, datasets: [{ data: values, backgroundColor: colors || Charts.bar, hoverBackgroundColor: colors || Charts.barHover, borderRadius: 8, borderSkipped: false, maxBarThickness: 22 }] },
         options: {
           indexAxis: 'y',
+          animation: { duration: 750, easing: 'easeOutQuart', delay: (c) => (c.type === 'data' && c.mode === 'default' ? c.dataIndex * 45 : 0) },
           scales: {
-            x: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: '#EEF1F6' } },
-            y: { grid: { display: false }, ticks: { autoSkip: false, callback(v) { const l = this.getLabelForValue(v); return l.length > 26 ? `${l.slice(0, 25)}…` : l; } } }
+            x: { beginAtZero: true, border: { display: false }, ticks: { precision: 0 }, grid: { color: 'rgba(48, 38, 59, .07)', drawTicks: false } },
+            y: { grid: { display: false }, border: { display: false }, ticks: { autoSkip: false, callback(v) { const l = this.getLabelForValue(v); return l.length > 26 ? `${l.slice(0, 25)}…` : l; } } }
           },
           plugins: { tooltip: { callbacks: { label: (c) => ` ${c.parsed.x} ${c.parsed.x === 1 ? 'inquiry' : 'inquiries'}` } } }
         }
@@ -1510,7 +1556,7 @@
       });
       const rows = Array.from(map.values()).sort((a, b) => b.count - a.count).slice(0, 10);
       if (!rows.length) { Charts.upsert('chart-assignee', null, State.cols.status ? 'No open inquiries — all caught up.' : 'No inquiries yet.'); return; }
-      Charts.hbar('chart-assignee', rows.map((r) => r.label), rows.map((r) => r.count), '#2A4A92');
+      Charts.hbar('chart-assignee', rows.map((r) => r.label), rows.map((r) => r.count), '#8E7BAA');
     },
 
     destroyAll() {
