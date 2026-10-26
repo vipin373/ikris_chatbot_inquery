@@ -286,6 +286,7 @@ window.IkrisCampaigns = (function () {
         ${st === 'APPROVED' && !t.sendable ? '<p class="tpl-card__reason">Has a dynamic button — send it from Meta/Cunnekt instead.</p>' : ''}
         <footer class="tpl-card__foot">
           ${st === 'APPROVED' && t.sendable ? `<button type="button" class="btn btn--wa btn--sm" data-tpl-use="${esc(t.name)}|${esc(t.language)}">Use in campaign</button>` : ''}
+          ${canDelete && ['APPROVED', 'REJECTED', 'PAUSED'].includes(st) ? `<button type="button" class="btn btn--outline btn--sm" data-tpl-edit="${esc(t.name)}|${esc(t.language)}"><svg aria-hidden="true"><use href="#i-edit"/></svg>Edit</button>` : ''}
           ${canDelete ? `<button type="button" class="icon-btn" data-tpl-delete="${esc(t.name)}" aria-label="Delete template ${esc(t.name)}" title="Delete"><svg aria-hidden="true"><use href="#i-trash"/></svg></button>` : ''}
         </footer>
       </article>`;
@@ -307,13 +308,45 @@ window.IkrisCampaigns = (function () {
   }
 
   /* ---------------- new template ---------------- */
-  function openTemplateDialog() {
+  function openTemplateDialog(edit) {
     $('#tpl-form').reset();
+    S.tplEdit = edit || null;
     S.tplButtons = [];
     S.tplMedia = null;
     setHeaderType('NONE');
     $('#tpl-msg').textContent = '';
-    renderTplExamples();
+    const st = edit ? String(edit.status || '').toUpperCase() : '';
+    $('#tpl-title').textContent = edit ? `Edit template · ${edit.name}` : 'New WhatsApp Template';
+    $('#tpl-name').disabled = !!edit;
+    $('#tpl-language').disabled = !!edit;
+    $('#tpl-category').disabled = st === 'APPROVED';
+    $('.btn__label', $('#tpl-submit')).textContent = edit ? 'Submit changes for review' : 'Submit for approval';
+    const note = $('#tpl-edit-note');
+    note.hidden = !edit;
+    if (edit) {
+      const twin = S.templates.find((x) => x.language === edit.language && (x.name === `${edit.name}_noname` || `${x.name}_noname` === edit.name));
+      note.innerHTML = (st === 'APPROVED'
+        ? '<b>Meta re-reviews every change.</b> An approved template can be edited once every 24 hours (at most 10 times in 30 days), and its category cannot change. Check that it shows <b>Approved</b> again before sending.'
+        : '<b>Fix the issue and resubmit.</b> Meta reviews the template again.') +
+        ' The name and language cannot be changed.' +
+        (twin ? ` <br>This template has a twin (<span class="mono">${esc(twin.name)}</span>) — edit it the same way so both versions stay identical.` : '');
+      $('#tpl-name').value = edit.name;
+      $('#tpl-language').value = edit.language;
+      if (edit.category) $('#tpl-category').value = edit.category;
+      const comps = Array.isArray(edit.components) ? edit.components : [];
+      const bodyC = comps.find((c) => c.type === 'BODY') || {};
+      $('#tpl-body').value = edit.body_text || bodyC.text || '';
+      $('#tpl-footer').value = edit.footer_text || '';
+      S.tplButtons = (((comps.find((c) => c.type === 'BUTTONS') || {}).buttons) || []).map((b) => ({ type: b.type, text: b.text || '', url: b.url || '', phone_number: b.phone_number || '' }));
+      const f = String(edit.header_format || '').toUpperCase();
+      if (f === 'TEXT') { setHeaderType('TEXT'); $('#tpl-header').value = edit.header_text || ''; }
+      else if (MEDIA_RULES[f]) { setHeaderType(f); S.tplMedia = { format: f, kept: true, name: edit.header_media_name || 'Current file', url: edit.header_media_url || '' }; renderTplMedia(); }
+      renderTplExamples();
+      const ex = ((bodyC.example || {}).body_text || [])[0] || [];
+      $$('[data-tpl-example]').forEach((inp, i) => { if (ex[i]) inp.value = ex[i]; });
+    } else {
+      renderTplExamples();
+    }
     renderTplButtons();
     renderTplPreview();
     openDialog('tpl-dialog');
@@ -341,7 +374,9 @@ window.IkrisCampaigns = (function () {
     $('#tpl-media-drop').hidden = !!m;
     info.hidden = !m;
     if (!m) { info.innerHTML = ''; return; }
-    info.innerHTML = m.uploading
+    info.innerHTML = m.kept
+      ? `<svg aria-hidden="true" class="media-file__ok"><use href="#i-check"/></svg><span class="media-file__name">${esc(m.name)}</span><span class="muted small">current file</span><button type="button" class="btn btn--ghost btn--sm" data-tpl-media-change>Change</button>`
+      : m.uploading
       ? `<span class="spinner" aria-hidden="true"></span><span class="media-file__name">${esc(m.name)}</span><span class="muted small">Uploading…</span>`
       : `<svg aria-hidden="true" class="media-file__ok"><use href="#i-check"/></svg><span class="media-file__name">${esc(m.name)}</span><span class="muted small">${fileSize(m.size)}</span><button type="button" class="btn btn--ghost btn--sm" data-tpl-media-change>Change</button><button type="button" class="icon-btn" data-tpl-media-remove aria-label="Remove file" title="Remove"><svg aria-hidden="true"><use href="#i-close"/></svg></button>`;
   }
@@ -424,24 +459,25 @@ window.IkrisCampaigns = (function () {
     const body = $('#tpl-body').value.trim();
     if (!/^[a-z0-9_]+$/.test(name)) { msg.textContent = 'Template name: use only lowercase letters, numbers and _ (e.g. enquiry_followup).'; $('#tpl-name').focus(); return; }
     if (!body) { msg.textContent = 'Write the message.'; $('#tpl-body').focus(); return; }
-    if (S.templates.some((t) => t.name === name && t.language === $('#tpl-language').value)) { msg.textContent = 'A template with this name and language already exists.'; return; }
+    const edit = S.tplEdit;
+    if (!edit && S.templates.some((t) => t.name === name && t.language === $('#tpl-language').value)) { msg.textContent = 'A template with this name and language already exists.'; return; }
     const examples = $$('[data-tpl-example]').map((i) => i.value.trim());
     if (examples.some((x) => !x)) { msg.textContent = 'Fill in an example value for every variable.'; return; }
     const htype = S.tplHeader;
     if (htype === 'TEXT' && !$('#tpl-header').value.trim()) { msg.textContent = 'Type the header text, or choose “None”.'; $('#tpl-header').focus(); return; }
     const m = S.tplMedia;
-    if (MEDIA_RULES[htype] && (!m || m.uploading || !m.path)) { msg.textContent = m && m.uploading ? 'Wait for the file to finish uploading.' : `Upload the header ${MEDIA_RULES[htype].noun}.`; return; }
+    if (MEDIA_RULES[htype] && (!m || m.uploading || (!m.path && !m.kept))) { msg.textContent = m && m.uploading ? 'Wait for the file to finish uploading.' : `Upload the header ${MEDIA_RULES[htype].noun}.`; return; }
 
     const btn = $('#tpl-submit');
     btn.disabled = true; btn.setAttribute('aria-busy', 'true');
     try {
-      await invoke({
-        action: 'create_template',
+      const res = await invoke({
+        action: edit ? 'edit_template' : 'create_template',
         template: {
           name, category: $('#tpl-category').value, language: $('#tpl-language').value,
           header_type: htype,
           header_text: htype === 'TEXT' ? $('#tpl-header').value.trim() : '',
-          ...(MEDIA_RULES[htype] ? { media_path: m.path, media_type: m.type, media_size: m.size, media_name: m.name } : {}),
+          ...(MEDIA_RULES[htype] && !m.kept ? { media_path: m.path, media_type: m.type, media_size: m.size, media_name: m.name } : {}),
           body, footer_text: $('#tpl-footer').value.trim(),
           examples, buttons: S.tplButtons.filter((b) => b.text && b.text.trim())
         }
@@ -450,7 +486,9 @@ window.IkrisCampaigns = (function () {
       await loadTemplates();
       S.tab = 'templates';
       renderAll();
-      ctx.toast({ type: 'success', title: 'Template submitted to Meta for approval.', body: '<p class="muted small" style="margin-top:4px">It usually takes a few minutes. Click “Refresh from WhatsApp” to see the new status.</p>', timeout: 7000 });
+      ctx.toast(edit
+        ? { type: 'success', title: `Changes to “${name}” submitted to Meta.`, body: `<p class="muted small" style="margin-top:4px">Status now: ${esc(STATUS_LABEL[String(res && res.status || '').toUpperCase()] || (res && res.status) || 'in review')}. Meta re-reviews edits, usually within minutes.</p>`, timeout: 8000 }
+        : { type: 'success', title: 'Template submitted to Meta for approval.', body: '<p class="muted small" style="margin-top:4px">It usually takes a few minutes. Click “Refresh from WhatsApp” to see the new status.</p>', timeout: 7000 });
     } catch (err) {
       msg.textContent = err.message;
     } finally {
@@ -809,6 +847,13 @@ window.IkrisCampaigns = (function () {
       if (e.target.closest('#tpl-refresh')) { sync(false); return; }
       const use = e.target.closest('[data-tpl-use]');
       if (use) { openSend({ mode: 'campaign', template: use.dataset.tplUse }); return; }
+      const editBtn = e.target.closest('[data-tpl-edit]');
+      if (editBtn) {
+        const [n, l] = editBtn.dataset.tplEdit.split('|');
+        const t = S.templates.find((x) => x.name === n && x.language === l);
+        if (t) openTemplateDialog(t);
+        return;
+      }
       const del = e.target.closest('[data-tpl-delete]');
       if (del) { deleteTemplate(del.dataset.tplDelete); return; }
       const row = e.target.closest('#cmp-rows [data-cmp]');

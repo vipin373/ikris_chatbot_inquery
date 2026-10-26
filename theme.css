@@ -647,3 +647,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--navy-600); }
 @media (max-width: 1024px) {
   .sidebar__brand .logo-plate { max-width: 180px; }
 }
+
+/* template edit note: plain text block (the .notice base is a flex row) */
+.tpl-edit-note { display: block; margin-bottom: 0; line-height: 1.5; }
+.tpl-edit-note[hidden] { display: none; }

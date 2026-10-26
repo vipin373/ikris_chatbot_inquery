@@ -6,6 +6,7 @@
 //    sync_templates                      → refresh the template list from Meta
 //    create_template  { template }       → submit a new template for Meta approval
 //    delete_template  { name }           → delete a template (admin or its creator)
+//    edit_template    { template }       → change an existing template (re-reviewed by Meta)
 //    send_campaign    { name, template_name, language, variables, conversation_ids }
 //    send_template    { conversation_id, template_name, language, variables }
 //
@@ -182,23 +183,20 @@ async function uploadHandle(url: string, size: number, type: string, name: strin
 
 const LANGS = ["en", "en_US", "en_GB", "hi", "ar", "fr", "es", "pt_BR", "ru", "de", "bn", "ur"];
 
-async function createTemplate(staff: Staff, input: Record<string, any>) {
-  const name = String(input.name ?? "").trim().toLowerCase();
-  if (!/^[a-z0-9_]{1,512}$/.test(name)) return { ok: false, error: "Template name: use only lowercase letters, numbers and underscores (e.g. followup_enquiry)." };
-  const category = String(input.category ?? "").toUpperCase();
-  if (!["MARKETING", "UTILITY"].includes(category)) return { ok: false, error: "Choose Marketing or Utility." };
-  const language = String(input.language ?? "en");
-  if (!LANGS.includes(language)) return { ok: false, error: "Unsupported language." };
-
+/**
+ * Validates the dialog input and builds Meta's template components (shared by create and edit).
+ * When editing, a media header that was not changed reuses the stored header component.
+ */
+async function buildComponents(input: Record<string, any>, existing: any[] | null = null): Promise<{ error?: string; components?: any[]; mediaUrl?: string | null; mediaName?: string | null }> {
   const body = String(input.body ?? "").trim();
-  if (!body) return { ok: false, error: "Message body is required." };
-  if (body.length > 1024) return { ok: false, error: "Message body can be at most 1024 characters." };
+  if (!body) return { error: "Message body is required." };
+  if (body.length > 1024) return { error: "Message body can be at most 1024 characters." };
   const bodyVars = countVars(body);
   const found = [...body.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1]));
-  for (let i = 1; i <= bodyVars; i++) if (!found.includes(i)) return { ok: false, error: `Variables must be numbered in order: {{1}}, {{2}}… ({{${i}}} is missing).` };
-  if (/^\s*\{\{/.test(body) || /\}\}\s*$/.test(body)) return { ok: false, error: "The message cannot start or end with a variable — add some text before/after it." };
+  for (let i = 1; i <= bodyVars; i++) if (!found.includes(i)) return { error: `Variables must be numbered in order: {{1}}, {{2}}… ({{${i}}} is missing).` };
+  if (/^\s*\{\{/.test(body) || /\}\}\s*$/.test(body)) return { error: "The message cannot start or end with a variable — add some text before/after it." };
   const examples: string[] = Array.isArray(input.examples) ? input.examples.map((e: unknown) => String(e ?? "").trim()) : [];
-  if (examples.length < bodyVars || examples.slice(0, bodyVars).some((e) => !e)) return { ok: false, error: "Give an example value for every variable — Meta needs them to review the template." };
+  if (examples.length < bodyVars || examples.slice(0, bodyVars).some((e) => !e)) return { error: "Give an example value for every variable — Meta needs them to review the template." };
 
   const components: any[] = [];
   const headerType = String(input.header_type ?? (input.header_text ? "TEXT" : "NONE")).toUpperCase();
@@ -206,21 +204,26 @@ async function createTemplate(staff: Staff, input: Record<string, any>) {
   let mediaName: string | null = null;
   if (headerType === "TEXT") {
     const header = clean(input.header_text, 60);
-    if (!header) return { ok: false, error: "Type the header text, or choose “No header”." };
-    if (/\{\{/.test(header)) return { ok: false, error: "Header variables are not supported here — keep the header as plain text." };
+    if (!header) return { error: "Type the header text, or choose “No header”." };
+    if (/\{\{/.test(header)) return { error: "Header variables are not supported here — keep the header as plain text." };
     components.push({ type: "HEADER", format: "TEXT", text: header });
   } else if (MEDIA_FORMATS.includes(headerType)) {
     const rule = MEDIA_RULES[headerType];
     const path = String(input.media_path ?? "");
     const type = String(input.media_type ?? "").toLowerCase();
     const size = Number(input.media_size ?? 0);
-    if (!/^templates\/[^/]+$/.test(path)) return { ok: false, error: "Upload the header file first." };
-    if (!rule.types.includes(type) || !size || size > rule.max) return { ok: false, error: `Header file must be a ${rule.label}.` };
+    const keep = existing?.find((c: any) => c.type === "HEADER" && c.format === headerType);
+    if (!path && keep) {
+      components.push(keep);                       // header file unchanged
+    } else {
+    if (!/^templates\/[^/]+$/.test(path)) return { error: "Upload the header file first." };
+    if (!rule.types.includes(type) || !size || size > rule.max) return { error: `Header file must be a ${rule.label}.` };
     mediaUrl = publicMediaUrl(path);
     mediaName = clean(input.media_name, 200) ?? path.split("/").pop()!;
     const up = await uploadHandle(mediaUrl, size, type, mediaName);
-    if (!up.ok) return { ok: false, error: up.error };
+    if (!up.ok) return { error: up.error };
     components.push({ type: "HEADER", format: headerType, example: { header_handle: [up.handle] } });
+    }
   }
   const bodyComp: any = { type: "BODY", text: body };
   if (bodyVars) bodyComp.example = { body_text: [examples.slice(0, bodyVars)] };
@@ -234,17 +237,31 @@ async function createTemplate(staff: Staff, input: Record<string, any>) {
     if (!text) continue;
     if (b.type === "URL") {
       const url = clean(b.url, 2000);
-      if (!url || !/^https:\/\//.test(url) || /\{\{/.test(url)) return { ok: false, error: "Website buttons need a full https:// link without variables." };
+      if (!url || !/^https:\/\//.test(url) || /\{\{/.test(url)) return { error: "Website buttons need a full https:// link without variables." };
       buttons.push({ type: "URL", text, url });
     } else if (b.type === "PHONE_NUMBER") {
       const phone = String(b.phone_number ?? "").replace(/[^\d+]/g, "");
-      if (phone.replace(/\D/g, "").length < 8) return { ok: false, error: "Call buttons need a phone number with country code." };
+      if (phone.replace(/\D/g, "").length < 8) return { error: "Call buttons need a phone number with country code." };
       buttons.push({ type: "PHONE_NUMBER", text, phone_number: phone.startsWith("+") ? phone : `+${phone}` });
     } else {
       buttons.push({ type: "QUICK_REPLY", text });
     }
   }
   if (buttons.length) components.push({ type: "BUTTONS", buttons });
+
+  return { components, mediaUrl, mediaName };
+}
+
+async function createTemplate(staff: Staff, input: Record<string, any>) {
+  const name = String(input.name ?? "").trim().toLowerCase();
+  if (!/^[a-z0-9_]{1,512}$/.test(name)) return { ok: false, error: "Template name: use only lowercase letters, numbers and underscores (e.g. followup_enquiry)." };
+  const category = String(input.category ?? "").toUpperCase();
+  if (!["MARKETING", "UTILITY"].includes(category)) return { ok: false, error: "Choose Marketing or Utility." };
+  const language = String(input.language ?? "en");
+  if (!LANGS.includes(language)) return { ok: false, error: "Unsupported language." };
+  const built = await buildComponents(input);
+  if (built.error) return { ok: false, error: built.error };
+  const { components, mediaUrl, mediaName } = built as { components: any[]; mediaUrl: string | null; mediaName: string | null };
 
   const r = await meta({ action: "create_template", template: { name, language, category, components } });
   if (!r.ok) return { ok: false, error: r.error ?? "WhatsApp rejected the template." };
@@ -260,6 +277,35 @@ async function createTemplate(staff: Staff, input: Record<string, any>) {
     created_at: new Date().toISOString(),
   }, { onConflict: "name,language" });
   return { ok: true, template: row };
+}
+
+/**
+ * Edits an existing template in place (same name and language). Meta re-reviews every edit.
+ * Meta's limits: approved templates 1 edit per 24 h and 10 per 30 days; category of an
+ * approved template cannot change. Pending templates cannot be edited.
+ */
+async function editTemplate(staff: Staff, input: Record<string, any>) {
+  const name = String(input.name ?? "");
+  const language = String(input.language ?? "");
+  const { data: t } = await admin.from("wa_templates").select("*").eq("name", name).eq("language", language).maybeSingle();
+  if (!t) return { ok: false, error: "Template not found — click Refresh from WhatsApp." };
+  if (!isAdmin(staff) && (t.created_by ?? "") !== staff.email) return { ok: false, error: "Only an admin or the person who created this template can edit it." };
+  const status = String(t.status ?? "").toUpperCase();
+  if (!["APPROVED", "REJECTED", "PAUSED"].includes(status)) return { ok: false, error: "This template is still being reviewed by Meta — you can edit it once it is approved or rejected." };
+  if (!/^\d+$/.test(String(t.meta_id ?? ""))) return { ok: false, error: "Template id is missing — click Refresh from WhatsApp and try again." };
+  const built = await buildComponents(input, Array.isArray(t.components) ? t.components : []);
+  if (built.error) return { ok: false, error: built.error };
+  const payload: Record<string, unknown> = { components: built.components };
+  const category = String(input.category ?? "").toUpperCase();
+  if (status !== "APPROVED" && ["MARKETING", "UTILITY"].includes(category) && category !== t.category) payload.category = category;
+  const r = await meta({ action: "edit_template", id: String(t.meta_id), payload });
+  if (!r.ok) return { ok: false, error: r.error ?? "WhatsApp did not accept the change." };
+  if (built.mediaUrl) {
+    await admin.from("wa_templates").update({ header_media_url: built.mediaUrl, header_media_name: built.mediaName }).eq("name", name).eq("language", language);
+  }
+  await syncTemplates();                           // pull the new wording and review status from Meta
+  const { data: fresh } = await admin.from("wa_templates").select("status").eq("name", name).eq("language", language).maybeSingle();
+  return { ok: true, status: fresh?.status ?? null };
 }
 
 async function deleteTemplate(staff: Staff, input: Record<string, any>) {
@@ -609,6 +655,7 @@ Deno.serve(async (req) => {
       case "sync_templates": return json(200, await syncTemplates());
       case "create_template": return json(200, await createTemplate(staff, body.template ?? {}));
       case "delete_template": return json(200, await deleteTemplate(staff, body));
+      case "edit_template": return json(200, await editTemplate(staff, body.template ?? {}));
       case "send_campaign": return json(200, await sendCampaign(staff, body, token));
       case "send_template": return json(200, await sendTemplateToChat(staff, body, token));
       default: return json(400, { ok: false, error: "Unknown action." });

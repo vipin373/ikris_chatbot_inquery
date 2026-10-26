@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261026d">
-  <link rel="stylesheet" href="theme.css?v=20261026d">
+  <link rel="stylesheet" href="style.css?v=20261026f">
+  <link rel="stylesheet" href="theme.css?v=20261026f">
 </head>
 <body>
 
@@ -52,6 +52,7 @@
     <symbol id="i-template" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-plug" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0V8ZM12 17v4"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.8a3.4 3.4 0 0 1 0 6.4M18 14.8c1.9.6 3.2 2.3 3.5 5.2"/></g></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
@@ -885,6 +886,7 @@ Content-Type: application/json
       </header>
       <div class="modal__split">
         <div class="modal__body">
+          <div class="notice notice--info tpl-edit-note" id="tpl-edit-note" hidden></div>
           <div class="field"><label for="tpl-name">Template name</label><input id="tpl-name" autocomplete="off" placeholder="e.g. enquiry_followup" maxlength="100" required><span class="field__hint">Lowercase letters, numbers and _ only. It cannot be changed later.</span></div>
           <div class="field__pair">
             <div class="field"><label for="tpl-category">Category</label>
@@ -1070,11 +1072,11 @@ Content-Type: application/json
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="chat.js?v=20261026d"></script>
-  <script src="contacts.js?v=20261026d"></script>
-  <script src="campaigns.js?v=20261026d"></script>
-  <script src="integrations.js?v=20261026d"></script>
-  <script src="app.js?v=20261026d"></script>
-  <script src="ui.js?v=20261026d"></script>
+  <script src="chat.js?v=20261026f"></script>
+  <script src="contacts.js?v=20261026f"></script>
+  <script src="campaigns.js?v=20261026f"></script>
+  <script src="integrations.js?v=20261026f"></script>
+  <script src="app.js?v=20261026f"></script>
+  <script src="ui.js?v=20261026f"></script>
 </body>
 </html>
