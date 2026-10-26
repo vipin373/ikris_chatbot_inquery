@@ -276,13 +276,99 @@ async function deleteTemplate(staff: Staff, input: Record<string, any>) {
 // ---------- sending ----------
 type VarSpec = { source?: string; value?: string };
 type Vars = { body?: VarSpec[]; header?: VarSpec[]; media_url?: string | null; media_name?: string | null };
+type SheetRow = Record<string, any>;
+type SendCtx = { sheet: SheetRow[] | null; variants: Map<string, Record<string, any> | null> };
 
-function resolveVar(spec: VarSpec | undefined, conv: Record<string, any>, staff: Staff) {
+// ---------- Google Sheet (department_inquery) lookup ----------
+// Read through the existing Apps Script web app with the caller's own session, so every
+// user only sees the inquiries their role allows. Nothing is written to the sheet.
+const SHEET_SOURCES = ["sheet_name", "sheet_assigned", "sheet_department", "sheet_medicine"];
+const SHEET_LABEL: Record<string, string> = {
+  sheet_name: "customer name", sheet_assigned: "assigned BD person", sheet_department: "department", sheet_medicine: "inquiry / medicine",
+};
+const usesSheet = (vars: Vars) => [...(vars.body ?? []), ...(vars.header ?? [])].some((v) => SHEET_SOURCES.includes(v?.source ?? ""));
+
+async function loadSheet(userToken: string): Promise<{ rows?: SheetRow[]; error?: string }> {
+  const { data: integ } = await admin.from("integrations").select("base_url").eq("slug", "google_sheet").maybeSingle();
+  const base = integ?.base_url;
+  if (!base) return { error: "The Google Sheet connection is not configured." };
+  const url = `${base}?action=dashboard_inquiries&token=${encodeURIComponent(userToken)}&_=${Date.now()}`;
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(60000) });
+    const out = await res.json().catch(() => null);
+    const ok = res.ok && out?.ok === true && Array.isArray(out?.data?.rows);
+    await recordMetric("google_sheet", "dashboard_inquiries (template variables)", ok, res.status, Math.round(performance.now() - t0), ok ? null : String(out?.error?.message ?? out?.error ?? `HTTP ${res.status}`), "wa-campaigns");
+    if (!ok) return { error: `Could not read the Google Sheet: ${String(out?.error?.message ?? out?.error ?? "no answer")}` };
+    return { rows: out.data.rows as SheetRow[] };
+  } catch (e) {
+    return { error: (e as Error).name === "TimeoutError" ? "Reading the Google Sheet timed out." : "Could not reach the Google Sheet." };
+  }
+}
+
+const normKey = (k: string) => k.toLowerCase().replace(/[^a-z]/g, "");
+function cell(row: SheetRow, ...names: string[]) {
+  const want = names.map(normKey);
+  for (const [k, v] of Object.entries(row)) if (want.includes(normKey(k))) return v;
+  return null;
+}
+const oneLine = (v: unknown, max: number) => {
+  const s = String(v ?? "").replace(/\s+/g, " ").trim();   // WhatsApp parameters may not contain line breaks or tabs
+  return s ? s.slice(0, max) : null;
+};
+const last10 = (p: unknown) => String(p ?? "").replace(/\D/g, "").slice(-10);
+
+/** The customer's most recent inquiry row: by inquiry ID first, then by phone number. */
+function sheetRowFor(conv: Record<string, any>, rows: SheetRow[] | null) {
+  if (!rows?.length) return null;
+  const inq = clean(conv.inquiry_id, 100);
+  if (inq) {
+    const byId = rows.filter((r) => String(cell(r, "Inquiry ID") ?? "").trim() === inq);
+    if (byId.length) return byId[byId.length - 1];
+  }
+  const ph = last10(conv.customer_phone);
+  if (ph.length < 8) return null;
+  const byPhone = rows.filter((r) => last10(cell(r, "Phone")) === ph);
+  if (!byPhone.length) return null;
+  const ts = (r: SheetRow) => Date.parse(String(cell(r, "Date/Time", "Date", "Timestamp") ?? "")) || 0;
+  return byPhone.sort((a, b) => ts(a) - ts(b))[byPhone.length - 1];
+}
+
+/** A usable person name, or null (blank, "Customer", phone numbers and placeholders count as missing). */
+function realName(v: unknown) {
+  const s = oneLine(v, 60);
+  if (!s) return null;
+  if (/^[\d\s+()-]+$/.test(s) || /^(customer|unknown|n\/?a|na|none|null|-|\.)$/i.test(s)) return null;
+  return s;
+}
+
+/** Returns the value, or null when the information is genuinely missing (never invented). */
+function resolveVar(spec: VarSpec | undefined, conv: Record<string, any>, staff: Staff, row: SheetRow | null, allowBlankName: boolean) {
   const src = spec?.source ?? "text";
-  if (src === "name") return clean(conv.customer_name, 60) ?? clean(spec?.value, 60) ?? "Customer";
+  if (src === "name") return realName(conv.customer_name) ?? clean(spec?.value, 60) ?? (allowBlankName ? null : "Customer");
   if (src === "agent") return staff.display_name ?? "Ikris Pharma Network";
   if (src === "inquiry") return clean(conv.inquiry_id, 60) ?? clean(spec?.value, 60) ?? "-";
+  if (src === "sheet_name") return realName(row && cell(row, "Name", "Customer Name")) ?? realName(conv.customer_name);
+  if (src === "sheet_assigned") return oneLine(row && cell(row, "Assigned To", "Assigned BD", "BD Person"), 60) ?? oneLine(conv.assigned_to, 60);
+  if (src === "sheet_department") return oneLine(row && cell(row, "Department"), 60) ?? oneLine(conv.department, 60);
+  if (src === "sheet_medicine") {
+    const med = oneLine(row && cell(row, "Product / Medicine", "Medicine", "Product"), 120);
+    if (med) return med;
+    const inq = oneLine(row && cell(row, "Problem / Inquiry", "Inquiry"), 200);
+    return inq && inq.length <= 80 ? inq : null;   // a long free-text note would read badly inside the sentence
+  }
   return clean(spec?.value, 1000) ?? "-";
+}
+const isNameSource = (spec: VarSpec | undefined) => spec?.source === "name" || spec?.source === "sheet_name";
+
+/** "<template>_noname": the approved version that opens with "Hello" instead of "Dear {{1}}". */
+async function noNameVariant(tpl: Record<string, any>, ctx: SendCtx) {
+  const key = `${tpl.name}_noname|${tpl.language}`;
+  if (!ctx.variants.has(key)) {
+    const { data } = await admin.from("wa_templates").select("*").eq("name", `${tpl.name}_noname`).eq("language", tpl.language).maybeSingle();
+    ctx.variants.set(key, data && data.status === "APPROVED" && data.sendable && data.body_vars === tpl.body_vars - 1 && !data.header_format ? data : null);
+  }
+  return ctx.variants.get(key) ?? null;
 }
 
 const fill = (text: string | null, values: string[]) =>
@@ -290,11 +376,13 @@ const fill = (text: string | null, values: string[]) =>
 
 async function sendOne(
   staff: Staff,
-  tpl: Record<string, any>,
+  tplIn: Record<string, any>,
   conv: Record<string, any>,
   vars: Vars,
   campaignId: string | null,
+  ctx: SendCtx = { sheet: null, variants: new Map() },
 ) {
+  let tpl = tplIn;
   const fmt = String(tpl.header_format ?? "");
   const isMedia = MEDIA_FORMATS.includes(fmt);
   const mediaLink = isMedia ? (clean(vars.media_url, 2000) ?? tpl.header_media_url ?? null) : null;
@@ -302,8 +390,22 @@ async function sendOne(
     return { ok: false, message_id: null, wa_message_id: null, error: `This template needs a header ${fmt.toLowerCase()} — choose a file before sending.` };
   }
   const mediaName = clean(vars.media_name, 200) ?? tpl.header_media_name ?? (mediaLink ? decodeURIComponent(mediaLink.split("/").pop()!.split("?")[0]) : null);
-  const bodyValues = Array.from({ length: tpl.body_vars }, (_, i) => resolveVar(vars.body?.[i], conv, staff));
-  const headerValues = Array.from({ length: tpl.header_vars }, (_, i) => resolveVar(vars.header?.[i], conv, staff));
+  const row = sheetRowFor(conv, ctx.sheet);
+  const variant = isNameSource(vars.body?.[0]) ? await noNameVariant(tpl, ctx) : null;
+  let bodyRaw = Array.from({ length: tpl.body_vars }, (_, i) => resolveVar(vars.body?.[i], conv, staff, row, !!variant));
+  const headerRaw = Array.from({ length: tpl.header_vars }, (_, i) => resolveVar(vars.header?.[i], conv, staff, row, false));
+  // No customer name → send the approved "Hello 👋" version instead of an empty greeting.
+  if (variant && bodyRaw[0] === null) { tpl = variant; bodyRaw = bodyRaw.slice(1); }
+  const specs = variant && tpl === variant ? (vars.body ?? []).slice(1) : (vars.body ?? []);
+  const missingAt = bodyRaw.findIndex((v) => v === null);
+  const missingHead = headerRaw.findIndex((v) => v === null);
+  if (missingAt >= 0 || missingHead >= 0) {
+    const spec = missingAt >= 0 ? specs[missingAt] : vars.header?.[missingHead];
+    const what = SHEET_LABEL[spec?.source ?? ""] ?? "a variable value";
+    return { ok: false, message_id: null, wa_message_id: null, error: `Not sent: the ${what} is missing for this customer in the Google Sheet${row ? "" : " (no matching inquiry row found)"}.` };
+  }
+  const bodyValues = bodyRaw as string[];
+  const headerValues = headerRaw as string[];
   const components: any[] = [];
   if (headerValues.length) components.push({ type: "header", parameters: headerValues.map((t) => ({ type: "text", text: t })) });
   if (isMedia) {
@@ -350,14 +452,14 @@ async function loadTemplate(name: string, language: string) {
   return { tpl: data };
 }
 
-async function runCampaign(staff: Staff, campaignId: string, tpl: Record<string, any>, vars: Vars, convs: Record<string, any>[]) {
+async function runCampaign(staff: Staff, campaignId: string, tpl: Record<string, any>, vars: Vars, convs: Record<string, any>[], sendCtx: SendCtx) {
   let sent = 0;
   let failed = 0;
   const queue = [...convs];
   const worker = async () => {
     while (queue.length) {
       const conv = queue.shift()!;
-      const res = await sendOne(staff, tpl, conv, vars, campaignId).catch((e) => ({ ok: false, message_id: null, wa_message_id: null, error: String(e) }));
+      const res = await sendOne(staff, tpl, conv, vars, campaignId, sendCtx).catch((e) => ({ ok: false, message_id: null, wa_message_id: null, error: String(e) }));
       if (res.ok) sent++; else failed++;
       await admin.from("campaign_recipients").update({
         status: res.ok ? "sent" : "failed",
@@ -375,7 +477,7 @@ async function runCampaign(staff: Staff, campaignId: string, tpl: Record<string,
   }).eq("id", campaignId);
 }
 
-async function sendCampaign(staff: Staff, input: Record<string, any>) {
+async function sendCampaign(staff: Staff, input: Record<string, any>, userToken: string) {
   const name = clean(input.name, 120);
   if (!name) return { ok: false, error: "Give the campaign a name." };
   const t = await loadTemplate(String(input.template_name ?? ""), String(input.language ?? ""));
@@ -433,6 +535,12 @@ async function sendCampaign(staff: Staff, input: Record<string, any>) {
 
   const department = isAdmin(staff) ? clean(input.department, 200) : staff.departments[0] ?? null;
   const vars: Vars = { body: input.variables?.body ?? [], header: input.variables?.header ?? [], media_url: clean(input.variables?.media_url, 2000), media_name: clean(input.variables?.media_name, 200) };
+  const sendCtx: SendCtx = { sheet: null, variants: new Map() };
+  if (usesSheet(vars)) {
+    const sh = await loadSheet(userToken);
+    if (sh.error) return { ok: false, error: sh.error };
+    sendCtx.sheet = sh.rows!;
+  }
   const { data: campaign, error } = await admin.from("campaigns").insert({
     name,
     template_name: t.tpl!.name,
@@ -450,7 +558,7 @@ async function sendCampaign(staff: Staff, input: Record<string, any>) {
   })));
 
   // Keep sending after the response is returned.
-  const job = runCampaign(staff, campaign.id, t.tpl!, vars, allowed).catch(async (e) => {
+  const job = runCampaign(staff, campaign.id, t.tpl!, vars, allowed, sendCtx).catch(async (e) => {
     console.error(e);
     await admin.from("campaigns").update({ status: "failed", completed_at: new Date().toISOString() }).eq("id", campaign.id);
   });
@@ -461,14 +569,20 @@ async function sendCampaign(staff: Staff, input: Record<string, any>) {
   return { ok: true, campaign, skipped: ids.length + contactIds.length - allowed.length, opted_out: optedOut };
 }
 
-async function sendTemplateToChat(staff: Staff, input: Record<string, any>) {
+async function sendTemplateToChat(staff: Staff, input: Record<string, any>, userToken: string) {
   const { data: conv } = await admin.from("chat_conversations").select("*").eq("id", String(input.conversation_id ?? "")).maybeSingle();
   if (!conv || !canSeeConv(staff, conv)) return { ok: false, error: "You cannot message this conversation." };
   const t = await loadTemplate(String(input.template_name ?? ""), String(input.language ?? ""));
   if (t.error) return { ok: false, error: t.error };
   const vars: Vars = { body: input.variables?.body ?? [], header: input.variables?.header ?? [], media_url: clean(input.variables?.media_url, 2000), media_name: clean(input.variables?.media_name, 200) };
-  const res = await sendOne(staff, t.tpl!, conv, vars, null);
-  if (["resolved", "closed"].includes(conv.status)) await admin.from("chat_conversations").update({ status: "open" }).eq("id", conv.id);
+  const sendCtx: SendCtx = { sheet: null, variants: new Map() };
+  if (usesSheet(vars)) {
+    const sh = await loadSheet(userToken);
+    if (sh.error) return { ok: false, error: sh.error };
+    sendCtx.sheet = sh.rows!;
+  }
+  const res = await sendOne(staff, t.tpl!, conv, vars, null, sendCtx);
+  if (res.message_id && ["resolved", "closed"].includes(conv.status)) await admin.from("chat_conversations").update({ status: "open" }).eq("id", conv.id);
   const { data: message } = res.message_id
     ? await admin.from("chat_messages").select("*").eq("id", res.message_id).maybeSingle()
     : { data: null };
@@ -495,8 +609,8 @@ Deno.serve(async (req) => {
       case "sync_templates": return json(200, await syncTemplates());
       case "create_template": return json(200, await createTemplate(staff, body.template ?? {}));
       case "delete_template": return json(200, await deleteTemplate(staff, body));
-      case "send_campaign": return json(200, await sendCampaign(staff, body));
-      case "send_template": return json(200, await sendTemplateToChat(staff, body));
+      case "send_campaign": return json(200, await sendCampaign(staff, body, token));
+      case "send_template": return json(200, await sendTemplateToChat(staff, body, token));
       default: return json(400, { ok: false, error: "Unknown action." });
     }
   } catch (e) {

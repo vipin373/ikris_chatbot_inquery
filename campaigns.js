@@ -34,8 +34,20 @@ window.IkrisCampaigns = (function () {
     ['name', 'Customer name'],
     ['text', 'Fixed text'],
     ['inquiry', 'Inquiry ID'],
-    ['agent', 'Your name']
+    ['agent', 'Your name'],
+    ['sheet_name', 'Customer name (Google Sheet)'],
+    ['sheet_assigned', 'Assigned BD person (Google Sheet)'],
+    ['sheet_department', 'Department (Google Sheet)'],
+    ['sheet_medicine', 'Inquiry / medicine (Google Sheet)']
   ];
+  const SHEET_PREVIEW = {
+    sheet_name: 'Customer name', sheet_assigned: 'Assigned BD person', sheet_department: 'Department', sheet_medicine: 'Inquiry / medicine'
+  };
+  // Templates whose variables come straight from the department_inquery sheet.
+  const VAR_PRESETS = {
+    ikris_inquiry_followup: ['sheet_name', 'sheet_assigned', 'sheet_department', 'sheet_medicine'],
+    ikris_inquiry_followup_noname: ['sheet_assigned', 'sheet_department', 'sheet_medicine']
+  };
   const MEDIA_RULES = {
     IMAGE: { types: ['image/jpeg', 'image/png'], max: 5 * 1024 * 1024, accept: 'image/jpeg,image/png', label: 'JPG or PNG image, up to 5 MB', noun: 'image' },
     VIDEO: { types: ['video/mp4', 'video/3gpp'], max: 16 * 1024 * 1024, accept: 'video/mp4,video/3gpp', label: 'MP4 video, up to 16 MB', noun: 'video' },
@@ -459,7 +471,8 @@ window.IkrisCampaigns = (function () {
   }
 
   /* ---------------- send: campaign or single chat ---------------- */
-  const approved = () => S.templates.filter((t) => String(t.status).toUpperCase() === 'APPROVED' && t.sendable);
+  const approved = () => S.templates.filter((t) => String(t.status).toUpperCase() === 'APPROVED' && t.sendable &&
+    !(/_noname$/.test(t.name) && S.templates.some((x) => x.name === t.name.replace(/_noname$/, '') && x.language === t.language)));
   const selectedTemplate = () => {
     const [name, lang] = String($('#send-template').value || '').split('|');
     return S.templates.find((t) => t.name === name && t.language === lang) || null;
@@ -560,12 +573,16 @@ window.IkrisCampaigns = (function () {
     for (let i = 0; i < (t.header_vars || 0); i++) rows.push(['header', i]);
     for (let i = 0; i < (t.body_vars || 0); i++) rows.push(['body', i]);
     if (!rows.length) { box.innerHTML = ''; return; }
+    const preset = VAR_PRESETS[t.name] || null;
+    const hasNoName = S.templates.some((x) => x.name === `${t.name}_noname` && x.language === t.language);
+    const pick = (part, i) => (part === 'body' && preset && preset[i]) || (part === 'body' && i === 0 ? 'name' : 'text');
     box.innerHTML = '<p class="send-label">Fill in the variables</p>' + rows.map(([part, i]) => `
       <div class="var-row" data-var="${part}:${i}">
         <span class="var-chip">${part === 'header' ? 'Header ' : ''}{{${i + 1}}}</span>
-        <select data-var-src aria-label="Value source">${VAR_SOURCES.map(([v, l]) => `<option value="${v}"${(part === 'body' && i === 0 ? 'name' : 'text') === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
+        <select data-var-src aria-label="Value source">${VAR_SOURCES.map(([v, l]) => `<option value="${v}"${pick(part, i) === v ? ' selected' : ''}>${l}</option>`).join('')}</select>
         <input data-var-val placeholder="${part === 'body' && i === 0 ? 'If the name is missing, use…' : 'Text'}" value="${part === 'body' && i === 0 ? 'Customer' : ''}" autocomplete="off" aria-label="Value">
-      </div>`).join('');
+      </div>`).join('') +
+      (preset ? `<p class="field__hint">Values are read from the Google Sheet (latest inquiry of each customer, matched by inquiry ID or phone). A customer with missing details is skipped, never filled with made-up text.${hasNoName ? ' If the customer name is blank, the approved “Hello 👋” version is sent automatically.' : ''}</p>` : '');
     syncVarInputs();
   }
 
@@ -573,7 +590,7 @@ window.IkrisCampaigns = (function () {
     $$('#send-vars [data-var]').forEach((row) => {
       const src = $('[data-var-src]', row).value;
       const input = $('[data-var-val]', row);
-      input.hidden = src === 'agent';
+      input.hidden = src === 'agent' || src.startsWith('sheet_');
       input.placeholder = src === 'text' ? 'Text to send' : src === 'name' ? 'If the name is missing, use…' : src === 'inquiry' ? 'If there is no inquiry, use…' : '';
     });
   }
@@ -592,6 +609,7 @@ window.IkrisCampaigns = (function () {
     if (spec.source === 'name') return (conv && conv.customer_name) || spec.value || 'Customer';
     if (spec.source === 'inquiry') return (conv && conv.inquiry_id) || spec.value || '-';
     if (spec.source === 'agent') return (me() && me().display_name) || 'Ikris Pharma Network';
+    if (SHEET_PREVIEW[spec.source]) return `[${SHEET_PREVIEW[spec.source]}]`;
     return spec.value || '…';
   }
 
