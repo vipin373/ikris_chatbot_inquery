@@ -226,6 +226,7 @@
     campaigns: 'WhatsApp Campaigns',
     inquiries: 'Department Inquiries',
     analytics: 'Analytics',
+    integrations: 'API Integration Center',
     settings: 'Settings'
   };
 
@@ -275,6 +276,7 @@
       if (view === 'inquiries') { State.unseen = 0; UI.updateBadge(); }
       if (view === 'chat' && window.IkrisChat) window.IkrisChat.onShow();
       if (view === 'campaigns' && window.IkrisCampaigns) window.IkrisCampaigns.onShow();
+      if (view === 'integrations' && window.IkrisIntegrations) window.IkrisIntegrations.onShow();
       if (view === 'contacts' && window.IkrisContacts) window.IkrisContacts.onShow();
       document.body.classList.toggle('is-chat-view', view === 'chat');
       Charts.renderFor(view);
@@ -1573,6 +1575,7 @@
       Render.all();                                            // skeleton states
       if (window.IkrisChat) window.IkrisChat.start(user);
       if (window.IkrisCampaigns) window.IkrisCampaigns.start(user);
+      if (window.IkrisIntegrations) window.IkrisIntegrations.start(user);
       if (window.IkrisContacts) window.IkrisContacts.start(user);
       Data.refresh().finally(() => { if (State.user) Poller.start(); });
     },
@@ -1582,6 +1585,7 @@
       Poller.stop();
       if (window.IkrisChat) window.IkrisChat.stop();
       if (window.IkrisCampaigns) window.IkrisCampaigns.stop();
+      if (window.IkrisIntegrations) window.IkrisIntegrations.stop();
       if (window.IkrisContacts) window.IkrisContacts.stop();
       $$('[data-chat-unread]').forEach((el) => { el.hidden = true; });
       document.body.classList.remove('is-chat-view');
@@ -1719,6 +1723,14 @@
       }
       if (window.IkrisCampaigns) {
         window.IkrisCampaigns.init({
+          client: () => Auth.client,
+          toast: (opts) => Notify.toast(opts),
+          showView: (v) => UI.showView(v),
+          isViewing: (v) => State.view === v
+        });
+      }
+      if (window.IkrisIntegrations) {
+        window.IkrisIntegrations.init({
           client: () => Auth.client,
           toast: (opts) => Notify.toast(opts),
           showView: (v) => UI.showView(v),

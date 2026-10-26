@@ -57,6 +57,16 @@ function fileName(name: string | null, mime: string) {
 const safeKey = (s: string) =>
   s.normalize("NFKD").replace(/[^\w.\- ]+/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").slice(-100) || "file";
 
+/** Records one outbound API call for the API Integration Center (no bodies, no headers, no secrets). */
+async function recordMetric(integration: string, endpoint: string, ok: boolean, status: number | null, ms: number, error: string | null, source: string) {
+  try {
+    await admin.from("integration_metrics").insert({
+      integration, endpoint, method: "POST", ok, status_code: status, duration_ms: ms, source,
+      error: error ? String(error).replace(/\b[A-Za-z0-9_\-]{32,}\b/g, "[redacted]").slice(0, 300) : null,
+    });
+  } catch { /* metrics must never break the main flow */ }
+}
+
 async function canSee(token: string, conv: Record<string, any>) {
   const { data: auth } = await admin.auth.getUser(token);
   const email = auth?.user?.email?.toLowerCase();
@@ -78,6 +88,7 @@ async function saveMedia(messageId: string) {
   if (!hook) return { ok: false, status: 500, error: "Media download is not configured." };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 120000);
+  const t0 = performance.now();
   let res: Response;
   try {
     res = await fetch(hook, {
@@ -88,10 +99,12 @@ async function saveMedia(messageId: string) {
     });
   } catch (e) {
     clearTimeout(timer);
+    await recordMetric("whatsapp_cloud", "media_download (via n8n)", false, null, Math.round(performance.now() - t0), (e as Error).name, "chat-media");
     return { ok: false, status: 502, error: (e as Error).name === "AbortError" ? "Downloading the file from WhatsApp timed out." : "Could not reach WhatsApp." };
   }
   clearTimeout(timer);
   const mime = (res.headers.get("x-media-mime") || res.headers.get("content-type") || m.attachment_type || "application/octet-stream").split(";")[0].trim();
+  await recordMetric("whatsapp_cloud", "media_download (via n8n)", res.ok && !mime.startsWith("application/json"), res.status, Math.round(performance.now() - t0), res.ok ? null : `HTTP ${res.status}`, "chat-media");
   if (!res.ok || mime.startsWith("application/json")) {
     const body = await res.text().catch(() => "");
     console.error("media fetch failed", res.status, body.slice(0, 300));

@@ -38,6 +38,16 @@ async function setting(key: string) {
   return (data?.value ?? "").trim();
 }
 
+/** Records one outbound API call for the API Integration Center (no bodies, no headers, no secrets). */
+async function recordMetric(integration: string, endpoint: string, ok: boolean, status: number | null, ms: number, error: string | null, source: string) {
+  try {
+    await admin.from("integration_metrics").insert({
+      integration, endpoint, method: "POST", ok, status_code: status, duration_ms: ms, source,
+      error: error ? String(error).replace(/\b[A-Za-z0-9_\-]{32,}\b/g, "[redacted]").slice(0, 300) : null,
+    });
+  } catch { /* metrics must never break the main flow */ }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json(405, { ok: false, error: "POST only" });
@@ -135,6 +145,8 @@ Deno.serve(async (req) => {
     }
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 20000);
+    const t0 = performance.now();
+    let httpStatus: number | null = null;
     try {
       const res = await fetch(webhook, {
         method: "POST",
@@ -153,6 +165,7 @@ Deno.serve(async (req) => {
           agent: { email, name: staff.display_name },
         }),
       });
+      httpStatus = res.status;
       const raw = await res.text();
       let out: Record<string, unknown> = {};
       try { out = JSON.parse(raw); } catch { /* plain-text reply */ }
@@ -169,6 +182,7 @@ Deno.serve(async (req) => {
     } finally {
       clearTimeout(timer);
     }
+    await recordMetric("whatsapp_cloud", attachmentPath ? "send_media (via n8n)" : "send_message (via n8n)", delivery === "sent", httpStatus, Math.round(performance.now() - t0), delivery === "sent" ? null : errorText, "chat-send");
   }
 
   const { data: finalMsg } = await admin.from("chat_messages")

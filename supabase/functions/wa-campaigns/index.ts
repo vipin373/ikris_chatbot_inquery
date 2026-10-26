@@ -62,6 +62,7 @@ async function meta(payload: Record<string, unknown>) {
   if (!url) return { ok: false, status: 0, data: null, error: "WhatsApp template API is not configured." };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 30000);
+  const t0 = performance.now();
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -77,12 +78,26 @@ async function meta(payload: Record<string, unknown>) {
     const error = metaErr
       ? clean(metaErr.error_user_msg || metaErr.error_data?.details || metaErr.message, 500)
       : (out.ok === false ? clean(out.error ?? raw, 500) : null);
-    return { ok: res.ok && out.ok !== false && !metaErr, status: out.status ?? res.status, data, error };
+    const ok = res.ok && out.ok !== false && !metaErr;
+    await recordMetric("whatsapp_cloud", `${String(payload.action ?? "call")} (via n8n)`, ok, Number(out.status ?? res.status) || null, Math.round(performance.now() - t0), ok ? null : error, "wa-campaigns");
+    return { ok, status: out.status ?? res.status, data, error };
   } catch (e) {
-    return { ok: false, status: 0, data: null, error: (e as Error).name === "AbortError" ? "WhatsApp API timed out." : "Could not reach the WhatsApp API." };
+    const error = (e as Error).name === "AbortError" ? "WhatsApp API timed out." : "Could not reach the WhatsApp API.";
+    await recordMetric("whatsapp_cloud", `${String(payload.action ?? "call")} (via n8n)`, false, null, Math.round(performance.now() - t0), error, "wa-campaigns");
+    return { ok: false, status: 0, data: null, error };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Records one outbound API call for the API Integration Center (no bodies, no headers, no secrets). */
+async function recordMetric(integration: string, endpoint: string, ok: boolean, status: number | null, ms: number, error: string | null, source: string) {
+  try {
+    await admin.from("integration_metrics").insert({
+      integration, endpoint, method: "POST", ok, status_code: status, duration_ms: ms, source,
+      error: error ? String(error).replace(/\b[A-Za-z0-9_\-]{32,}\b/g, "[redacted]").slice(0, 300) : null,
+    });
+  } catch { /* metrics must never break the main flow */ }
 }
 
 // ---------- templates ----------
@@ -145,6 +160,7 @@ async function uploadHandle(url: string, size: number, type: string, name: strin
   if (!hook) return { ok: false, error: "Media upload is not configured." };
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 120000);
+  const t0 = performance.now();
   try {
     const res = await fetch(hook, {
       method: "POST",
@@ -153,7 +169,9 @@ async function uploadHandle(url: string, size: number, type: string, name: strin
       body: JSON.stringify({ url, file_length: size, file_type: type, file_name: name }),
     });
     const out = await res.json().catch(() => ({}));
-    if (!res.ok || !out.ok || !out.handle) return { ok: false, error: clean(out.error, 300) ?? "WhatsApp could not accept the header file." };
+    const ok = res.ok && !!out.ok && !!out.handle;
+    await recordMetric("whatsapp_cloud", "template_media_upload (via n8n)", ok, res.status, Math.round(performance.now() - t0), ok ? null : clean(out.error, 300), "wa-campaigns");
+    if (!ok) return { ok: false, error: clean(out.error, 300) ?? "WhatsApp could not accept the header file." };
     return { ok: true, handle: String(out.handle) };
   } catch (e) {
     return { ok: false, error: (e as Error).name === "AbortError" ? "Uploading the file to WhatsApp timed out." : "Could not reach the media upload service." };

@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261023b">
+  <link rel="stylesheet" href="style.css?v=20261026a">
 </head>
 <body>
 
@@ -49,6 +49,7 @@
     <symbol id="i-megaphone" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M4 10v4a1 1 0 0 0 1 1h2l8 4V5L7 9H5a1 1 0 0 0-1 1zM18 9.5a3.5 3.5 0 0 1 0 5M8 15l1.5 5"/></symbol>
     <symbol id="i-template" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" d="M5 4h14v16H5zM8.5 8.5h7M8.5 12h7M8.5 15.5h4"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M9 3v5M15 3v5M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0V8ZM12 17v4"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></symbol>
     <symbol id="i-users" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5M16 4.8a3.4 3.4 0 0 1 0 6.4M18 14.8c1.9.6 3.2 2.3 3.5 5.2"/></g></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
@@ -182,6 +183,7 @@
         <button type="button" class="nav__item" data-nav="campaigns"><svg aria-hidden="true"><use href="#i-megaphone"/></svg>Campaigns</button>
         <button type="button" class="nav__item" data-nav="inquiries"><svg aria-hidden="true"><use href="#i-list"/></svg>Department Inquiries<span class="nav__badge" data-new-count hidden></span></button>
         <button type="button" class="nav__item" data-nav="analytics"><svg aria-hidden="true"><use href="#i-chart"/></svg>Analytics</button>
+        <button type="button" class="nav__item" data-nav="integrations" hidden><svg aria-hidden="true"><use href="#i-plug"/></svg>API Integrations</button>
         <p class="nav__label">Account</p>
         <button type="button" class="nav__item" data-nav="settings"><svg aria-hidden="true"><use href="#i-settings"/></svg>Settings</button>
         <button type="button" class="nav__item" data-action="logout"><svg aria-hidden="true"><use href="#i-logout"/></svg>Logout</button>
@@ -590,6 +592,149 @@
           </div>
         </section>
 
+        <!-- ===== VIEW: API INTEGRATION CENTER (admin only) ===== -->
+        <section class="view view--integ" data-view="integrations" hidden>
+          <div class="notice notice--info" id="integ-noaccess" hidden>Only administrators can manage API integrations.</div>
+          <div id="integ-body" hidden>
+            <p class="integ-intro muted">Manage API credentials, connect external services, configure webhooks, and monitor integration performance from one place.</p>
+            <div class="cmp-head">
+              <div class="cmp-tabs" role="tablist" aria-label="API Integration Center sections">
+                <button type="button" role="tab" class="cmp-tab" data-integ-tab="setup" aria-selected="true">API Setup</button>
+                <button type="button" role="tab" class="cmp-tab" data-integ-tab="usage" aria-selected="false">API Usage</button>
+              </div>
+              <div class="cmp-head__actions">
+                <button type="button" class="btn btn--wa btn--sm" id="integ-add"><svg aria-hidden="true"><use href="#i-plus"/></svg>Add integration</button>
+              </div>
+            </div>
+
+            <!-- API Setup -->
+            <div class="cmp-panel" data-integ-panel="setup">
+              <section class="card card--flush">
+                <div class="table-meta">
+                  <div class="search cmp-search">
+                    <svg aria-hidden="true"><use href="#i-search"/></svg>
+                    <label class="sr-only" for="integ-search">Search integrations</label>
+                    <input id="integ-search" type="search" placeholder="Search by name, provider or URL" autocomplete="off">
+                  </div>
+                  <p id="integ-count"></p>
+                </div>
+                <div class="integ-grid" id="integ-list" aria-live="polite"><div class="cmp-empty"><span class="spinner" aria-hidden="true"></span> Loading…</div></div>
+              </section>
+
+              <section class="card">
+                <header class="card__head"><div><h2>Configure Your Callback URL</h2><p class="card__sub">Ikris sends signed WhatsApp events (new customer messages, delivery status) to your HTTPS endpoint, with automatic retries.</p></div></header>
+                <form id="hook-form" class="hook-form" novalidate>
+                  <input type="hidden" id="hook-id">
+                  <div class="hook-form__row">
+                    <div class="field"><label for="hook-name">Name</label><input id="hook-name" placeholder="e.g. CRM" autocomplete="off" maxlength="80"></div>
+                    <div class="field hook-form__url"><label for="hook-url">Callback URL (HTTPS)</label><input id="hook-url" type="url" inputmode="url" placeholder="https://your-server.com/ikris/webhook" autocomplete="off" required></div>
+                  </div>
+                  <fieldset class="integ-fieldset">
+                    <legend>Events</legend>
+                    <label class="integ-check"><input type="checkbox" name="hook-event" value="message.received" checked> New customer message <span class="mono muted small">message.received</span></label>
+                    <label class="integ-check"><input type="checkbox" name="hook-event" value="message.status" checked> Delivery status (sent / delivered / read / failed) <span class="mono muted small">message.status</span></label>
+                    <label class="integ-check"><input type="checkbox" id="hook-enabled" checked> Enabled</label>
+                  </fieldset>
+                  <p class="form-msg" id="hook-msg" role="status" aria-live="polite"></p>
+                  <div class="hook-form__actions">
+                    <button type="button" class="btn btn--outline btn--sm" id="hook-validate">Validate URL</button>
+                    <button type="button" class="btn btn--ghost btn--sm" id="hook-cancel" hidden>Cancel edit</button>
+                    <button type="submit" class="btn btn--wa btn--sm" id="hook-save">Save callback</button>
+                  </div>
+                </form>
+                <div class="hook-list" id="hook-list"></div>
+                <div class="hook-tools"><button type="button" class="btn btn--outline btn--sm" id="hook-retry" hidden>Retry pending now</button></div>
+                <details class="integ-help">
+                  <summary>How to verify events on your server</summary>
+                  <p class="small">Every request carries <span class="mono">X-Ikris-Signature: v1=&lt;hex&gt;</span>, <span class="mono">X-Ikris-Timestamp</span> and <span class="mono">X-Ikris-Event-Id</span>. Compute HMAC-SHA256 of <span class="mono">timestamp + "." + raw body</span> with your signing secret, compare in constant time, reject timestamps older than 5 minutes and ignore event IDs you have already processed. Answer with any 2xx status within 10 seconds; failures are retried after 30 s, 2 min, 8 min and 32 min.</p>
+<pre class="integ-code"><code>// Node.js (Express, raw body)
+const crypto = require('crypto');
+function verify(req, secret) {
+  const ts = req.get('X-Ikris-Timestamp');
+  const sig = (req.get('X-Ikris-Signature') || '').replace('v1=', '');
+  if (Math.abs(Date.now() / 1000 - Number(ts)) &gt; 300) return false;
+  const expected = crypto.createHmac('sha256', secret).update(ts + '.' + req.rawBody).digest('hex');
+  return sig.length === expected.length &amp;&amp; crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}</code></pre>
+                </details>
+              </section>
+
+              <section class="card">
+                <header class="card__head"><div><h2>Project API keys</h2><p class="card__sub">Let your other projects call the integrations configured here, without ever receiving the provider credentials.</p></div></header>
+                <form id="key-form" class="key-form" novalidate>
+                  <div class="hook-form__row">
+                    <div class="field"><label for="key-name">Project name</label><input id="key-name" placeholder="e.g. Website enquiry form" autocomplete="off" maxlength="80"></div>
+                    <div class="field"><label for="key-expiry">Expires</label><select id="key-expiry"><option value="30">In 30 days</option><option value="90" selected>In 90 days</option><option value="365">In 1 year</option><option value="0">Never</option></select></div>
+                  </div>
+                  <fieldset class="integ-fieldset"><legend>Integrations this key may use</legend><div id="key-allowed"></div></fieldset>
+                  <p class="form-msg is-bad" id="key-msg" role="alert"></p>
+                  <div class="hook-form__actions"><button type="submit" class="btn btn--wa btn--sm" id="key-create">Create key</button></div>
+                </form>
+                <div class="table-wrap">
+                  <table class="table integ-table">
+                    <thead><tr><th>Key</th><th>Allowed</th><th>Expires</th><th>Last used</th><th>Status</th><th class="num"><span class="sr-only">Actions</span></th></tr></thead>
+                    <tbody id="key-list"></tbody>
+                  </table>
+                </div>
+                <details class="integ-help">
+                  <summary>How another project uses a key</summary>
+<pre class="integ-code"><code>POST https://mdyniigwwhupdnxwtnvo.supabase.co/functions/v1/integrations
+x-ikris-key: ikr_live_…
+Content-Type: application/json
+
+{ "action": "request", "integration": "my_integration", "method": "GET", "path": "/status" }</code></pre>
+                  <p class="small muted">Ikris adds the stored credential on the server and returns <span class="mono">{ status, ms, body }</span>. Limit: 60 requests per minute per key.</p>
+                </details>
+              </section>
+
+              <section class="card">
+                <header class="card__head"><div><h2>Incoming WhatsApp webhook</h2><p class="card__sub">Read only - managed in n8n</p></div></header>
+                <dl class="kv">
+                  <div><dt>Receives from</dt><dd>Meta WhatsApp Cloud API → n8n chatbot workflow</dd></div>
+                  <div><dt>Forwards to</dt><dd>Supabase <span class="mono">chat-ingest</span> (shared secret header)</dd></div>
+                  <div><dt>Configured in</dt><dd>Meta App Dashboard → WhatsApp → Configuration</dd></div>
+                </dl>
+              </section>
+
+              <section class="card">
+                <header class="card__head"><div><h2>Recent changes</h2><p class="card__sub">Audit log - who changed what (no secrets are logged)</p></div></header>
+                <ul class="integ-audit" id="integ-audit"></ul>
+              </section>
+            </div>
+
+            <!-- API Usage -->
+            <div class="cmp-panel" data-integ-panel="usage" hidden>
+              <section class="card">
+                <div class="usage-filters">
+                  <div class="field"><label for="usage-range">Period</label><select id="usage-range"><option value="24h">Last 24 hours</option><option value="7d" selected>Last 7 days</option><option value="30d">Last 30 days</option><option value="90d">Last 90 days</option><option value="custom">Custom…</option></select></div>
+                  <div class="usage-custom" id="usage-custom" hidden>
+                    <div class="field"><label for="usage-from">From</label><input id="usage-from" type="date"></div>
+                    <div class="field"><label for="usage-to">To</label><input id="usage-to" type="date"></div>
+                  </div>
+                  <div class="field"><label for="usage-integ">Integration</label><select id="usage-integ"><option value="">All integrations</option></select></div>
+                  <div class="field"><label for="usage-ok">Outcome</label><select id="usage-ok"><option value="">All</option><option value="ok">Successful</option><option value="fail">Failed</option></select></div>
+                  <div class="field"><label for="usage-endpoint">Endpoint</label><select id="usage-endpoint"><option value="">All endpoints</option></select></div>
+                  <button type="button" class="btn btn--outline btn--sm" id="usage-refresh"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Refresh</button>
+                </div>
+                <p class="muted small usage-note">Counts are requests made by Ikris (dashboard, edge functions and callbacks), measured locally. The chatbot's own AI calls run inside n8n and are only visible as provider-reported spend below.</p>
+              </section>
+              <div class="kpis usage-kpis" id="usage-kpis"></div>
+              <div class="usage-grid">
+                <section class="card card--flush usage-span"><header class="card__head"><div><h2>Usage by integration</h2></div></header><div class="table-wrap" id="usage-providers"></div></section>
+                <section class="card"><header class="card__head"><div><h2>Status codes</h2></div></header><div class="ubars" id="usage-status"></div></section>
+                <section class="card"><header class="card__head"><div><h2>Requests per day</h2></div></header><div class="ubars" id="usage-days"></div></section>
+                <section class="card"><header class="card__head"><div><h2>Callback deliveries</h2></div></header><div class="mini-stats" id="usage-hooks"></div></section>
+                <section class="card"><header class="card__head"><div><h2>Provider-reported usage</h2></div></header><div id="usage-reported"></div></section>
+                <section class="card card--flush usage-span">
+                  <header class="card__head"><div><h2>Recent activity</h2><p class="card__sub">Last 50 requests matching the filters</p></div></header>
+                  <div class="table-wrap"><table class="table integ-table"><thead><tr><th>Time</th><th>Integration</th><th>Endpoint</th><th>Source</th><th class="num">HTTP</th><th class="num">ms</th><th>Result</th></tr></thead><tbody id="usage-recent"></tbody></table></div>
+                </section>
+                <section class="card usage-span"><header class="card__head"><div><h2>Recent errors</h2></div></header><ul class="integ-audit" id="usage-errors"></ul></section>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- ===== VIEW: SETTINGS ===== -->
         <section class="view" data-view="settings" hidden>
           <div class="grid grid--settings">
@@ -663,6 +808,68 @@
         <button type="submit" class="btn btn--wa btn--sm"><span class="btn__label">Start Chat</span></button>
       </footer>
     </form>
+  </div>
+
+  <!-- ============ API INTEGRATION DIALOGS ============ -->
+  <div class="drawer-scrim" id="integ-scrim" hidden></div>
+  <div class="modal integ-modal" id="integ-dialog" role="dialog" aria-modal="true" aria-labelledby="integ-dialog-title" hidden>
+    <form class="modal__card modal__card--wide" id="integ-form" novalidate autocomplete="off">
+      <header class="modal__head"><h2 id="integ-dialog-title">Add integration</h2><button type="button" class="icon-btn" data-integ-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button></header>
+      <div class="modal__body">
+        <div class="field" data-integ-full><label for="integ-provider">Provider</label>
+          <select id="integ-provider"><option value="custom_rest">Custom REST API</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option><option value="whatsapp_cloud">WhatsApp Cloud API</option><option value="cunnekt">Cunnekt WhatsApp API</option><option value="sendgrid">SendGrid (email)</option><option value="resend">Resend (email)</option><option value="hubspot">HubSpot CRM</option></select></div>
+        <div class="field"><label for="integ-name">Integration name</label><input id="integ-name" maxlength="80" required></div>
+        <div class="field" data-integ-full><label for="integ-base">Base URL</label><input id="integ-base" type="url" inputmode="url" placeholder="https://api.example.com/v1"><span class="field__hint">HTTPS only. Private and internal addresses are blocked.</span></div>
+        <div class="field" data-integ-full><label for="integ-auth">Authentication</label>
+          <select id="integ-auth"><option value="bearer">Bearer token</option><option value="api_key_header">API key in header</option><option value="basic">Basic auth</option><option value="oauth2_client">OAuth 2.0 (client credentials)</option><option value="none">No authentication</option></select></div>
+        <div class="field" id="integ-header-field" hidden><label for="integ-header">Header name</label><input id="integ-header" value="X-API-Key" maxlength="60"></div>
+        <div class="field" id="integ-secret-field"><label for="integ-secret" id="integ-secret-label">API key or token</label>
+          <div class="integ-secret-wrap"><input id="integ-secret" type="password" autocomplete="new-password" spellcheck="false"><button type="button" class="btn btn--ghost btn--sm" id="integ-secret-reveal" aria-pressed="false" aria-label="Show or hide the value">Show</button></div>
+          <span class="field__hint" id="integ-secret-hint"></span></div>
+        <div class="field" data-integ-full><label for="integ-test-path">Test endpoint (path)</label><input id="integ-test-path" placeholder="e.g. /status"><span class="field__hint">A harmless GET request used by “Test connection”.</span></div>
+        <div class="field" data-integ-full><label for="integ-headers">Extra headers (optional, not secret)</label><textarea id="integ-headers" rows="2" placeholder="Accept: application/json"></textarea><span class="field__hint">One per line. Put secrets in the credential field, never here.</span></div>
+        <p class="form-msg is-bad" id="integ-msg" role="alert"></p>
+      </div>
+      <footer class="modal__foot"><button type="button" class="btn btn--ghost btn--sm" data-integ-close>Cancel</button><button type="submit" class="btn btn--wa btn--sm" id="integ-save">Save</button></footer>
+    </form>
+  </div>
+
+  <div class="modal integ-modal" id="rotate-dialog" role="dialog" aria-modal="true" aria-labelledby="rotate-title" hidden>
+    <form class="modal__card" id="rotate-form" novalidate autocomplete="off">
+      <header class="modal__head"><h2 id="rotate-title">Rotate credential</h2><button type="button" class="icon-btn" data-integ-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button></header>
+      <div class="modal__body">
+        <p class="small"><b id="rotate-name"></b> - current key <span class="mono" id="rotate-current"></span></p>
+        <p class="small muted">Create the new key in the provider’s dashboard first and paste it here. Ikris tests it before switching; if the test fails, the current key stays active.</p>
+        <div class="field"><label for="rotate-secret">New credential</label><input id="rotate-secret" type="password" autocomplete="new-password" spellcheck="false" required></div>
+        <label class="integ-check" id="rotate-untested-field" hidden><input type="checkbox" id="rotate-untested"> No test endpoint is set - activate without testing</label>
+        <p class="form-msg is-bad" id="rotate-msg" role="alert"></p>
+      </div>
+      <footer class="modal__foot"><button type="button" class="btn btn--ghost btn--sm" data-integ-close>Cancel</button><button type="submit" class="btn btn--wa btn--sm" id="rotate-save">Test and activate</button></footer>
+    </form>
+  </div>
+
+  <div class="modal integ-modal" id="del-dialog" role="dialog" aria-modal="true" aria-labelledby="del-title" hidden>
+    <form class="modal__card" id="del-form" novalidate autocomplete="off">
+      <header class="modal__head"><h2 id="del-title">Delete integration</h2><button type="button" class="icon-btn" data-integ-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button></header>
+      <div class="modal__body">
+        <p class="small">This permanently deletes <b id="del-name"></b> and its stored credential. Project keys using it will stop working for it.</p>
+        <div class="field"><label for="del-confirm">Type <span class="mono" id="del-slug"></span> to confirm</label><input id="del-confirm" autocomplete="off" spellcheck="false"></div>
+        <p class="form-msg is-bad" id="del-msg" role="alert"></p>
+      </div>
+      <footer class="modal__foot"><button type="button" class="btn btn--ghost btn--sm" data-integ-close>Cancel</button><button type="submit" class="btn btn--danger btn--sm" id="del-save">Delete</button></footer>
+    </form>
+  </div>
+
+  <div class="modal integ-modal" id="secret-dialog" role="dialog" aria-modal="true" aria-labelledby="secret-title" hidden>
+    <div class="modal__card">
+      <header class="modal__head"><h2 id="secret-title">Copy this secret</h2><button type="button" class="icon-btn" data-integ-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button></header>
+      <div class="modal__body">
+        <p class="small" id="secret-help"></p>
+        <code class="integ-secret-box mono" id="secret-value"></code>
+        <p class="small muted" id="secret-copied" aria-live="polite"></p>
+      </div>
+      <footer class="modal__foot"><button type="button" class="btn btn--outline btn--sm" id="secret-copy">Copy</button><button type="button" class="btn btn--wa btn--sm" data-integ-close>I have saved it</button></footer>
+    </div>
   </div>
 
   <!-- ============ CAMPAIGN / TEMPLATE DIALOGS ============ -->
@@ -861,9 +1068,10 @@
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="chat.js?v=20261023b"></script>
-  <script src="contacts.js?v=20261023b"></script>
-  <script src="campaigns.js?v=20261023b"></script>
-  <script src="app.js?v=20261023b"></script>
+  <script src="chat.js?v=20261026a"></script>
+  <script src="contacts.js?v=20261026a"></script>
+  <script src="campaigns.js?v=20261026a"></script>
+  <script src="integrations.js?v=20261026a"></script>
+  <script src="app.js?v=20261026a"></script>
 </body>
 </html>

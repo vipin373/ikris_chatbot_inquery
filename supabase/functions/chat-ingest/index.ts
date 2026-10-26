@@ -86,6 +86,7 @@ async function handleOne(item: Record<string, unknown>) {
     const { data: cur } = await admin.from("chat_messages").select("delivery_status").eq("wa_message_id", wa).maybeSingle();
     if (cur && st !== "failed" && order.indexOf(cur.delivery_status) > order.indexOf(st)) return { ok: true, skipped: true };
     const { error } = await admin.from("chat_messages").update(patch).eq("wa_message_id", wa);
+    if (!error) forwardEvent("message.status", `status_${wa}_${st}`, { wa_message_id: wa, status: st, error: patch.error ?? null, at: new Date().toISOString() });
     return error ? { ok: false, error: error.message } : { ok: true };
   }
 
@@ -157,7 +158,38 @@ async function handleOne(item: Record<string, unknown>) {
     return { ok: false, error: msgErr.message };
   }
   if (row.wa_media_id) keepFile(msg.id);
+  if (direction === "in" && senderType === "customer") {
+    forwardEvent("message.received", `msg_${row.wa_message_id ?? msg.id}`, {
+      message_id: msg.id, wa_message_id: row.wa_message_id, conversation_id: conversationId,
+      phone, customer_name: name, text, attachment_type: row.attachment_type, attachment_name: row.attachment_name,
+      has_file: !!row.wa_media_id, department: department ?? null, received_at: created,
+    });
+  }
   return { ok: true, conversation_id: conversationId, message_id: msg.id };
+}
+
+/** Sends the event to the callback URLs configured in the API Integration Center (signed, with retries). */
+let hooksCache: { has: boolean; at: number } | null = null;
+function forwardEvent(type: string, eventId: string, data: Record<string, unknown>) {
+  const job = (async () => {
+    try {
+      if (!hooksCache || Date.now() - hooksCache.at > 60_000) {
+        const { count } = await admin.from("webhook_endpoints").select("id", { count: "exact", head: true }).eq("enabled", true);
+        hooksCache = { has: (count ?? 0) > 0, at: Date.now() };
+      }
+      if (!hooksCache.has) return;
+      await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/integrations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ikris-secret": await ingestSecret() },
+        body: JSON.stringify({ action: "enqueue", event_type: type, event_id: eventId, data }),
+      });
+    } catch (e) {
+      console.error("forwardEvent", (e as Error).message);
+    }
+  })();
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(job);
 }
 
 /** Saves the customer's file in the background (chat-media downloads it via n8n). */

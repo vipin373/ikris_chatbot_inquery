@@ -398,3 +398,14 @@ Meta charges per template message (marketing > utility). Only message customers 
 - Filter by tag / department / source, search, bulk actions (send campaign, add/remove tag, change department, opt out/in, delete) and **Quick Broadcast**.
 - Campaigns now pick recipients from Contacts; opted-out contacts are never messaged. Contacts who never chatted get a chat created when the campaign is sent (status *resolved* until they reply).
 - Access: admin → all; departments → their own department's contacts (RLS).
+
+## API Integration Center (admins only)
+
+Sidebar → **API Integrations**. Two tabs:
+
+- **API Setup** – add/edit/test/enable/rotate/delete external APIs (credentials are encrypted in Supabase Vault and never sent back to the browser), callback URLs for WhatsApp events (HMAC-signed, retried 30 s → 2 m → 8 m → 32 m), project API keys (shown once, stored as SHA-256 hash, expiry + revoke) and an audit log.
+- **API Usage** – request counts, success rate, response times, status codes, per-integration usage, recent activity/errors and callback delivery stats, from `integration_metrics` / `webhook_deliveries` (locally measured). OpenRouter spend is provider-reported at the last connection test.
+
+Backend: edge function `integrations` (verify_jwt off; checks admin JWT, internal secret or project key itself), migrations `007_integration_center.sql` and `008_webhook_retry_cron.sql` (pg_cron runs due retries every minute). The WhatsApp and OpenRouter keys used by the chatbot stay in n8n; the center only monitors and tests them.
+
+Verifying callbacks on your server: `X-Ikris-Signature: v1=HMAC_SHA256(secret, X-Ikris-Timestamp + "." + rawBody)`; reject timestamps older than 5 minutes and de-duplicate on `X-Ikris-Event-Id`.
