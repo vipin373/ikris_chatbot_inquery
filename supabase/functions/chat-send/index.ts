@@ -110,6 +110,17 @@ Deno.serve(async (req) => {
     return json(400, { ok: false, error: "Attachment does not belong to this conversation." });
   }
 
+  // ---- human takeover: pause the chatbot BEFORE this message reaches WhatsApp ----
+  // Bumps ai_epoch, so any AI reply that was being prepared is refused at its send check.
+  const { data: taken, error: takeErr } = await admin.rpc("chat_ai_human_reply", {
+    p_conv: conv!.id, p_email: email, p_name: staff.display_name ?? email,
+  });
+  if (takeErr) {
+    console.error("chat_ai_human_reply", takeErr.message);
+    return json(500, { ok: false, error: "Could not pause the chatbot for this chat, so the message was not sent. Please try again." });
+  }
+  if (taken) conv = taken as Record<string, any>;
+
   // ---- store the outgoing message ----
   const { data: msg, error: msgErr } = await admin.from("chat_messages").insert({
     conversation_id: conv!.id,
@@ -129,6 +140,7 @@ Deno.serve(async (req) => {
   // Replying re-opens a resolved/closed chat.
   if (["resolved", "closed"].includes(conv!.status)) {
     await admin.from("chat_conversations").update({ status: "open" }).eq("id", conv!.id);
+    conv!.status = "open";
   }
 
   // ---- deliver through n8n → Cunnekt ----
@@ -189,5 +201,5 @@ Deno.serve(async (req) => {
     .update({ delivery_status: delivery, error: errorText, wa_message_id: waId })
     .eq("id", msg.id).select("*").single();
 
-  return json(200, { ok: true, sent: delivery === "sent", conversation_id: conv!.id, message: finalMsg ?? msg });
+  return json(200, { ok: true, sent: delivery === "sent", conversation_id: conv!.id, message: finalMsg ?? msg, conversation: conv });
 });

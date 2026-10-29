@@ -651,3 +651,29 @@ input[type=checkbox], input[type=radio] { accent-color: var(--navy-600); }
 /* template edit note: plain text block (the .notice base is a flex row) */
 .tpl-edit-note { display: block; margin-bottom: 0; line-height: 1.5; }
 .tpl-edit-note[hidden] { display: none; }
+
+/* ---------- Human agent takeover bar (AI on / human handling / closed) ---------- */
+.chat-ai { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 18px; border-bottom: 1px solid var(--border); background: var(--ivory); font-size: 13px; }
+.chat-ai:empty { display: none; }
+.chat-ai__state { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: var(--text); min-width: 0; }
+.chat-ai__state svg { width: 18px; height: 18px; flex: none; }
+.chat-ai__state small { font-weight: 500; color: var(--muted); }
+.chat-ai__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.chat-ai--ai .chat-ai__state svg { color: var(--lavender-deep); }
+.chat-ai--ai .chat-ai__dot { background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
+.chat-ai--human { background: var(--cream); }
+.chat-ai--human .chat-ai__state svg { color: var(--warning-text); }
+.chat-ai--human .chat-ai__dot { background: var(--warning); box-shadow: 0 0 0 3px var(--warning-bg); }
+.chat-ai--closed .chat-ai__state svg { color: var(--muted); }
+.chat-ai--closed .chat-ai__dot { background: var(--muted); }
+.chat-ai__actions { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.chat-ai__actions .btn { height: 30px; }
+.chat-ai__actions .btn svg { width: 15px; height: 15px; }
+.chat-card__ai { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; margin-right: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: var(--warning-bg); color: var(--warning-text); }
+.chat-card__ai svg { width: 12px; height: 12px; }
+.chat-card__ai--closed { background: var(--sand); color: var(--muted); }
+@media (max-width: 860px) {
+  .chat-ai { padding: 8px 12px; }
+  .chat-ai__actions { margin-left: 0; width: 100%; }
+  .chat-ai__actions .btn { flex: 1 1 auto; }
+}

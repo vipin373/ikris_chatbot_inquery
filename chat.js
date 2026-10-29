@@ -379,6 +379,8 @@ window.IkrisChat = (() => {
                 <span class="chat-card__msg">${esc(c.last_message || '—')}</span>
                 ${unread ? `<span class="chat-card__badge" aria-label="${c.unread_count} unread">${c.unread_count > 99 ? '99+' : c.unread_count}</span>` : ''}
               </span>
+              ${aiMode(c) === 'HUMAN_HANDOVER' ? `<span class="chat-card__ai"><svg aria-hidden="true"><use href="#i-headset"/></svg>Handled by ${esc(c.assigned_agent_name || 'team')}</span>`
+                : aiMode(c) === 'CLOSED' ? '<span class="chat-card__ai chat-card__ai--closed"><svg aria-hidden="true"><use href="#i-bot"/></svg>Bot off</span>' : ''}
               ${c.status !== 'open' ? `<span class="chat-card__status chat-status--${esc(c.status)}">${esc(cap(c.status))}</span>` : ''}
             </span>
           </button>
@@ -438,6 +440,7 @@ window.IkrisChat = (() => {
       c.priority !== 'normal' ? `<span class="chat-pill chat-prio--${esc(c.priority)}">${esc(cap(c.priority))} priority</span>` : '',
       c.inquiry_id ? `<span class="chat-pill chat-pill--plain mono">${esc(c.inquiry_id)}</span>` : ''
     ].join('');
+    renderAI(c);
     const old = c.last_inbound_at && (Date.now() - new Date(c.last_inbound_at).getTime() > 24 * 3600 * 1000);
     const note = $('#chat-window-note');
     note.hidden = !(old || !c.last_inbound_at);
@@ -445,6 +448,69 @@ window.IkrisChat = (() => {
       ? 'This customer has not messaged yet. WhatsApp only delivers an approved template as the first message.'
       : 'The 24-hour reply window has closed — WhatsApp will reject normal messages until the customer writes again.'}</span>`
       + (window.IkrisCampaigns ? '<button type="button" class="btn btn--wa btn--sm" data-chat-template>Send template</button>' : '');
+  }
+
+  /* ---------------- human agent takeover (AI on / human handling / closed) ---------------- */
+  const aiMode = (c) => (c && c.conversation_status) || 'AI_ACTIVE';
+  const agoLabel = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return sameDay(d, new Date()) ? `since ${time(d)}` : `since ${dateLabel(d)}`;
+  };
+
+  function renderAI(c) {
+    const box = $('#chat-ai');
+    if (!box) return;
+    const mode = aiMode(c);
+    const me = (S.user && S.user.email || '').toLowerCase();
+    const mine = c.assigned_agent_id && c.assigned_agent_id.toLowerCase() === me;
+    const btn = (act, icon, label, cls) =>
+      `<button type="button" class="btn ${cls} btn--sm" data-chat-ai="${act}"><svg aria-hidden="true"><use href="#${icon}"/></svg>${label}</button>`;
+    let state, actions;
+    if (mode === 'HUMAN_HANDOVER') {
+      state = `<svg aria-hidden="true"><use href="#i-headset"/></svg><span class="chat-ai__dot" aria-hidden="true"></span>
+        <span>Handled by ${esc(mine ? 'you' : (c.assigned_agent_name || 'a team member'))} <small>· chatbot paused ${esc(agoLabel(c.ai_paused_at))}</small></span>`;
+      actions = (mine ? '' : btn('take_over', 'i-headset', 'Take Over', 'btn--outline'))
+        + btn('resume_ai', 'i-bot', 'Resume AI', 'btn--outline')
+        + btn('close', 'i-check', 'Close Conversation', 'btn--outline');
+    } else if (mode === 'CLOSED') {
+      state = `<svg aria-hidden="true"><use href="#i-check"/></svg><span class="chat-ai__dot" aria-hidden="true"></span>
+        <span>Conversation closed <small>· chatbot off until someone resumes it</small></span>`;
+      actions = btn('take_over', 'i-headset', 'Take Over', 'btn--outline') + btn('resume_ai', 'i-bot', 'Resume AI', 'btn--outline');
+    } else {
+      state = `<svg aria-hidden="true"><use href="#i-bot"/></svg><span class="chat-ai__dot" aria-hidden="true"></span>
+        <span>AI chatbot active <small>· replying to this customer automatically</small></span>`;
+      actions = btn('take_over', 'i-headset', 'Take Over', 'btn--primary') + btn('close', 'i-check', 'Close Conversation', 'btn--outline');
+    }
+    box.className = `chat-ai chat-ai--${mode === 'HUMAN_HANDOVER' ? 'human' : mode === 'CLOSED' ? 'closed' : 'ai'}`;
+    box.innerHTML = `<div class="chat-ai__state">${state}</div><div class="chat-ai__actions">${actions}</div>`;
+  }
+
+  async function aiControl(action, button) {
+    const c = S.convs.get(S.selected);
+    if (!c || S.aiBusy) return;
+    S.aiBusy = true;
+    $$('[data-chat-ai]').forEach((b) => { b.disabled = true; });
+    if (button) button.setAttribute('aria-busy', 'true');
+    const { data, error } = await client().rpc('chat_ai_control', { p_conv: c.id, p_action: action });
+    S.aiBusy = false;
+    if (error || !data) {
+      $$('[data-chat-ai]').forEach((b) => { b.disabled = false; });
+      if (button) button.removeAttribute('aria-busy');
+      ctx.toast({ type: 'error', title: 'Could not update the chatbot for this chat.', body: '<p class="muted small" style="margin-top:4px">You may not have access to this conversation. Please try again.</p>', timeout: 7000 });
+      return;
+    }
+    S.convs.set(data.id, data);
+    renderThreadHeader();
+    renderAssign();
+    renderListSoon();
+    ctx.onCounts();
+    const msg = {
+      take_over: 'You are now handling this chat. The chatbot will not reply to this customer.',
+      resume_ai: 'Chatbot resumed. It will answer this customer’s next messages.',
+      close: 'Conversation closed. The chatbot stays off until someone resumes it.'
+    }[action];
+    ctx.toast({ type: 'success', title: msg, timeout: 5000 });
   }
 
   function renderAssign() {
@@ -601,6 +667,11 @@ window.IkrisChat = (() => {
       S.pendingFile = null;
       renderFileChip();
       if (res && res.message) onMessage(res.message, false);
+      if (res && res.conversation && res.conversation.id) {   // replying hands the chat to you and pauses the bot
+        S.convs.set(res.conversation.id, res.conversation);
+        if (S.selected === res.conversation.id) renderThreadHeader();
+        renderListSoon();
+      }
       if (res && res.sent === false) {
         ctx.toast({ type: 'error', title: 'Saved but not sent to WhatsApp', body: `<p class="muted small" style="margin-top:4px">${esc(res.message && res.message.error || 'WhatsApp sending is not configured yet.')}</p>`, timeout: 8000 });
       }
@@ -767,6 +838,8 @@ window.IkrisChat = (() => {
         return;
       }
       if (e.target.closest('#chat-new-btn')) { openNewChat(); return; }
+      const aiBtn = e.target.closest('[data-chat-ai]');
+      if (aiBtn && S.selected) { aiControl(aiBtn.dataset.chatAi, aiBtn); return; }
       if (e.target.closest('[data-chat-template]') && S.selected && window.IkrisCampaigns) {
         const c = S.convs.get(S.selected);
         window.IkrisCampaigns.openTemplatePicker(c, (msg) => { if (msg) onMessage(msg, true); });

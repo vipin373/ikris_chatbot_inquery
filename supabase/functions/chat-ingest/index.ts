@@ -104,14 +104,15 @@ async function handleOne(item: Record<string, unknown>) {
 
   // Find or create the conversation for this phone number
   const { data: existing, error: findErr } = await admin
-    .from("chat_conversations").select("id, customer_name").eq("customer_phone", phone).maybeSingle();
+    .from("chat_conversations").select("id, customer_name, conversation_status").eq("customer_phone", phone).maybeSingle();
   if (findErr) return { ok: false, error: findErr.message };
 
   let conversationId = existing?.id as string | undefined;
   const routing: Record<string, unknown> = {};
   if (name && (!existing || !existing.customer_name || direction === "in")) routing.customer_name = name;
   if (department) routing.department = department;
-  if (assigned) routing.assigned_to = assigned;
+  // An employee handling the chat keeps it — automatic routing never reassigns it away from them.
+  if (assigned && existing?.conversation_status !== "HUMAN_HANDOVER") routing.assigned_to = assigned;
   if (inquiry) routing.inquiry_id = inquiry;
 
   if (!conversationId) {
