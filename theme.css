@@ -677,3 +677,6 @@ input[type=checkbox], input[type=radio] { accent-color: var(--navy-600); }
   .chat-ai__actions { margin-left: 0; width: 100%; }
   .chat-ai__actions .btn { flex: 1 1 auto; }
 }
+
+/* WhatsApp-style sending: retry link on a message that could not be sent */
+.msg__retry { font-size: 11.5px; font-weight: 700; margin-left: 6px; padding: 0; color: var(--navy-600); text-decoration: underline; background: none; border: 0; cursor: pointer; }

@@ -4,9 +4,14 @@
 //  plus a chat_staff access check on the conversation's department.
 //
 //  Delivery to WhatsApp: the message is POSTed to the n8n webhook stored
-//  in chat_settings.send_webhook_url. n8n sends it through Cunnekt and
+//  in chat_settings.send_webhook_url. n8n sends it through WhatsApp and
 //  replies with JSON, e.g. { "ok": true, "wa_message_id": "wamid…" }.
 //  If no webhook is configured the message is saved with status not_sent.
+//
+//  Speed: the dashboard gets its answer as soon as the message is saved
+//  (status "queued"); the WhatsApp delivery finishes in the background and
+//  updates the message row, which the dashboard shows live (sent / failed).
+//  Send { wait: true } to wait for delivery before answering.
 // =====================================================================
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
@@ -33,9 +38,14 @@ type Staff = { email: string; display_name: string | null; role: string; departm
 const canSee = (s: Staff, dep: string | null) =>
   s.role === "admin" || (!!norm(dep) && s.departments.some((d) => norm(d) === norm(dep)));
 
-async function setting(key: string) {
-  const { data } = await admin.from("chat_settings").select("value").eq("key", key).maybeSingle();
-  return (data?.value ?? "").trim();
+/** Both send settings in one query, cached for a minute. */
+let settingsCache: { url: string; secret: string; at: number } | null = null;
+async function sendSettings() {
+  if (settingsCache && Date.now() - settingsCache.at < 60_000) return settingsCache;
+  const { data } = await admin.from("chat_settings").select("key, value").in("key", ["send_webhook_url", "send_webhook_secret"]);
+  const get = (k: string) => String((data ?? []).find((r) => r.key === k)?.value ?? "").trim();
+  settingsCache = { url: get("send_webhook_url"), secret: get("send_webhook_secret"), at: Date.now() };
+  return settingsCache;
 }
 
 /** Records one outbound API call for the API Integration Center (no bodies, no headers, no secrets). */
@@ -48,34 +58,44 @@ async function recordMetric(integration: string, endpoint: string, ok: boolean, 
   } catch { /* metrics must never break the main flow */ }
 }
 
+function background(job: Promise<unknown>) {
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(job);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json(405, { ok: false, error: "POST only" });
 
-  // ---- who is calling ----
+  // ---- who is calling (token check and body read in parallel) ----
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const { data: auth, error: authErr } = await admin.auth.getUser(token);
+  const [authRes, body] = await Promise.all([
+    admin.auth.getUser(token),
+    req.json().catch(() => null) as Promise<Record<string, unknown> | null>,
+  ]);
+  const { data: auth, error: authErr } = authRes;
   if (authErr || !auth?.user?.email) return json(401, { ok: false, code: "UNAUTHORIZED", error: "Session is not valid." });
+  if (!body) return json(400, { ok: false, error: "Invalid request." });
   const email = auth.user.email.toLowerCase();
-  const { data: staff } = await admin.from("chat_staff").select("*").eq("email", email).maybeSingle();
-  if (!staff) return json(403, { ok: false, code: "FORBIDDEN", error: "Your account has no chat access." });
-
-  let body: Record<string, unknown>;
-  try {
-    body = await req.json();
-  } catch {
-    return json(400, { ok: false, error: "Invalid request." });
-  }
 
   const text = clean(body.text, 4096);
   const attachmentPath = clean(body.attachment_path, 500);
   if (!text && !attachmentPath) return json(400, { ok: false, error: "Type a message or attach a file." });
 
+  // ---- staff + conversation lookups in parallel ----
+  const [{ data: staff }, convLookup] = await Promise.all([
+    admin.from("chat_staff").select("*").eq("email", email).maybeSingle(),
+    body.conversation_id
+      ? admin.from("chat_conversations").select("*").eq("id", String(body.conversation_id)).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  if (!staff) return json(403, { ok: false, code: "FORBIDDEN", error: "Your account has no chat access." });
+
   // ---- conversation: existing or new ----
   let conv: Record<string, any> | null = null;
   if (body.conversation_id) {
-    const { data } = await admin.from("chat_conversations").select("*").eq("id", String(body.conversation_id)).maybeSingle();
-    conv = data;
+    conv = convLookup.data as Record<string, any> | null;
     if (!conv || !(canSee(staff, conv.department) || (conv.shared_departments ?? []).some((d: string) => canSee(staff, d)))) return json(403, { ok: false, code: "FORBIDDEN", error: "You cannot reply in this conversation." });
   } else if (body.new_conversation && typeof body.new_conversation === "object") {
     const n = body.new_conversation as Record<string, unknown>;
@@ -138,68 +158,80 @@ Deno.serve(async (req) => {
   if (msgErr) return json(500, { ok: false, error: "Could not save the message." });
 
   // Replying re-opens a resolved/closed chat.
-  if (["resolved", "closed"].includes(conv!.status)) {
-    await admin.from("chat_conversations").update({ status: "open" }).eq("id", conv!.id);
-    conv!.status = "open";
-  }
+  const reopen = ["resolved", "closed"].includes(conv!.status)
+    ? admin.from("chat_conversations").update({ status: "open" }).eq("id", conv!.id).then(() => undefined)
+    : Promise.resolve();
+  if (["resolved", "closed"].includes(conv!.status)) conv!.status = "open";
 
-  // ---- deliver through n8n → Cunnekt ----
-  const webhook = await setting("send_webhook_url");
-  let delivery = "not_sent";
-  let errorText: string | null = webhook ? null : "WhatsApp sending is not configured yet (n8n send webhook missing).";
-  let waId: string | null = null;
+  // ---- deliver through n8n → WhatsApp ----
+  const deliver = async () => {
+    await reopen;
+    const { url: webhook, secret } = await sendSettings();
+    let delivery = "not_sent";
+    let errorText: string | null = webhook ? null : "WhatsApp sending is not configured yet (n8n send webhook missing).";
+    let waId: string | null = null;
 
-  if (webhook) {
-    let mediaUrl: string | null = null;
-    if (attachmentPath) {
-      const { data: signed } = await admin.storage.from("chat-attachments").createSignedUrl(attachmentPath, 60 * 60 * 24 * 7);
-      mediaUrl = signed?.signedUrl ?? null;
-    }
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 20000);
-    const t0 = performance.now();
-    let httpStatus: number | null = null;
-    try {
-      const res = await fetch(webhook, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: { "Content-Type": "application/json", "x-ikris-secret": await setting("send_webhook_secret") },
-        body: JSON.stringify({
-          to: conv!.customer_phone,
-          customer_name: conv!.customer_name,
-          text,
-          media_url: mediaUrl,
-          media_type: clean(body.attachment_type, 200),
-          file_name: clean(body.attachment_name, 300),
-          message_id: msg.id,
-          conversation_id: conv!.id,
-          department: conv!.department,
-          agent: { email, name: staff.display_name },
-        }),
-      });
-      httpStatus = res.status;
-      const raw = await res.text();
-      let out: Record<string, unknown> = {};
-      try { out = JSON.parse(raw); } catch { /* plain-text reply */ }
-      if (res.ok && out.ok !== false) {
-        delivery = "sent";
-        waId = clean(out.wa_message_id ?? out.message_id ?? out.id, 200);
-      } else {
-        delivery = "failed";
-        errorText = clean(out.error ?? out.message ?? raw, 500) ?? `HTTP ${res.status}`;
+    if (webhook) {
+      let mediaUrl: string | null = null;
+      if (attachmentPath) {
+        const { data: signed } = await admin.storage.from("chat-attachments").createSignedUrl(attachmentPath, 60 * 60 * 24 * 7);
+        mediaUrl = signed?.signedUrl ?? null;
       }
-    } catch (e) {
-      delivery = "failed";
-      errorText = (e as Error).name === "AbortError" ? "WhatsApp gateway timed out." : "Could not reach the WhatsApp gateway.";
-    } finally {
-      clearTimeout(timer);
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20000);
+      const t0 = performance.now();
+      let httpStatus: number | null = null;
+      try {
+        const res = await fetch(webhook, {
+          method: "POST",
+          signal: ctrl.signal,
+          headers: { "Content-Type": "application/json", "x-ikris-secret": secret },
+          body: JSON.stringify({
+            to: conv!.customer_phone,
+            customer_name: conv!.customer_name,
+            text,
+            media_url: mediaUrl,
+            media_type: clean(body.attachment_type, 200),
+            file_name: clean(body.attachment_name, 300),
+            message_id: msg.id,
+            conversation_id: conv!.id,
+            department: conv!.department,
+            agent: { email, name: staff.display_name },
+          }),
+        });
+        httpStatus = res.status;
+        const raw = await res.text();
+        let out: Record<string, unknown> = {};
+        try { out = JSON.parse(raw); } catch { /* plain-text reply */ }
+        if (res.ok && out.ok !== false) {
+          delivery = "sent";
+          waId = clean(out.wa_message_id ?? out.message_id ?? out.id, 200);
+        } else {
+          delivery = "failed";
+          errorText = clean(out.error ?? out.message ?? raw, 500) ?? `HTTP ${res.status}`;
+        }
+      } catch (e) {
+        delivery = "failed";
+        errorText = (e as Error).name === "AbortError" ? "WhatsApp gateway timed out." : "Could not reach the WhatsApp gateway.";
+      } finally {
+        clearTimeout(timer);
+      }
+      background(recordMetric("whatsapp_cloud", attachmentPath ? "send_media (via n8n)" : "send_message (via n8n)", delivery === "sent", httpStatus, Math.round(performance.now() - t0), delivery === "sent" ? null : errorText, "chat-send"));
     }
-    await recordMetric("whatsapp_cloud", attachmentPath ? "send_media (via n8n)" : "send_message (via n8n)", delivery === "sent", httpStatus, Math.round(performance.now() - t0), delivery === "sent" ? null : errorText, "chat-send");
+
+    const { data: finalMsg } = await admin.from("chat_messages")
+      .update({ delivery_status: delivery, error: errorText, wa_message_id: waId })
+      .eq("id", msg.id).select("*").single();
+    return { delivery, finalMsg };
+  };
+
+  if (body.wait === true) {
+    const { delivery, finalMsg } = await deliver();
+    return json(200, { ok: true, sent: delivery === "sent", conversation_id: conv!.id, message: finalMsg ?? msg, conversation: conv });
   }
 
-  const { data: finalMsg } = await admin.from("chat_messages")
-    .update({ delivery_status: delivery, error: errorText, wa_message_id: waId })
-    .eq("id", msg.id).select("*").single();
-
-  return json(200, { ok: true, sent: delivery === "sent", conversation_id: conv!.id, message: finalMsg ?? msg, conversation: conv });
+  // Answer the dashboard now; WhatsApp delivery continues in the background and
+  // updates the message row (the dashboard shows the new status live).
+  background(deliver().catch((e) => console.error("deliver", e)));
+  return json(200, { ok: true, sent: null, queued: true, conversation_id: conv!.id, message: msg, conversation: conv });
 });

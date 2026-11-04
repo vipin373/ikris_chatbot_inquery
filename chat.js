@@ -71,7 +71,7 @@ window.IkrisChat = (() => {
     channel: null,
     signed: new Map(),       // storage path -> signed url
     pendingFile: null,
-    sending: false
+    queues: new Map()        // conversation_id -> promise chain (keeps outgoing messages in order)
   });
   let S = fresh();
 
@@ -156,6 +156,8 @@ window.IkrisChat = (() => {
       const { data } = await client().from('chat_conversations').select('*')
         .order('last_message_at', { ascending: false, nullsFirst: false }).limit(1000);
       if (data) { S.convs = new Map(data.map((c) => [c.id, c])); renderAll(); }
+      const open = S.selected;
+      if (open && S.messages.has(open)) { await loadMessages(open); if (S.selected === open) renderMessages(false); }
     } catch (_) { /* keep current data */ }
   }, 400);
 
@@ -175,14 +177,44 @@ window.IkrisChat = (() => {
     ctx.onCounts();
   }
 
-  function onMessage(m, isInsert) {
-    const list = S.messages.get(m.conversation_id);
-    if (list) {
-      const i = list.findIndex((x) => x.id === m.id);
-      if (i >= 0) list[i] = m; else list.push(m);
-      list.sort((a, b) => a.created_at.localeCompare(b.created_at));
-      if (S.selected === m.conversation_id) renderMessages(isInsert);
+  /* Status never moves backwards (a late "sent" must not undo "read"). */
+  const STATUS_RANK = { queued: 0, sent: 1, delivered: 2, read: 3 };
+  function mergeMsg(cur, inc) {
+    const out = Object.assign({}, cur, inc, { _key: cur._key || cur.id });
+    if (STATUS_RANK[cur.delivery_status] > STATUS_RANK[inc.delivery_status] && inc.delivery_status !== 'failed') {
+      out.delivery_status = cur.delivery_status;
     }
+    delete out._pending; delete out._file; delete out._uploaded;
+    return out;
+  }
+  const byTime = (a, b) => {
+    // Bubbles still being sent stay at the bottom, like WhatsApp; everything else in server time order.
+    if (!!a._pending !== !!b._pending) return a._pending ? 1 : -1;
+    return String(a.created_at).localeCompare(String(b.created_at)) || String(a.id).localeCompare(String(b.id));
+  };
+  const myEmail = () => String((S.user && S.user.email) || '').toLowerCase();
+
+  /* Adds or updates one message in the open list. An employee's own message coming back from
+     the server replaces its "Sending…" bubble instead of appearing twice. */
+  function upsertMessage(m) {
+    const list = S.messages.get(m.conversation_id);
+    if (!list) return false;
+    const i = list.findIndex((x) => x.id === m.id);
+    if (i >= 0) { list[i] = mergeMsg(list[i], m); }
+    else {
+      const j = (m.direction === 'out' && m.sender_type === 'agent' && String(m.sender_email || '').toLowerCase() === myEmail())
+        ? list.findIndex((x) => x._pending && !x._realId && (x.body || null) === (m.body || null)
+            && (x.attachment_name || null) === (m.attachment_name || null))
+        : -1;
+      if (j >= 0) { list[j]._realId = m.id; list[j] = mergeMsg(list[j], m); }
+      else list.push(Object.assign({}, m, { _key: m.id }));
+    }
+    list.sort(byTime);
+    return true;
+  }
+
+  function onMessage(m, isInsert) {
+    if (upsertMessage(m) && S.selected === m.conversation_id) renderMessages(isInsert && m.direction === 'out');
     if (isInsert && m.direction === 'in') {
       const c = S.convs.get(m.conversation_id);
       const viewing = S.selected === m.conversation_id && ctx.isViewing('chat') && !document.hidden;
@@ -209,7 +241,13 @@ window.IkrisChat = (() => {
     const { data, error } = await client().from('chat_messages').select('*')
       .eq('conversation_id', id).order('created_at', { ascending: true }).limit(1000);
     if (error) throw error;
-    S.messages.set(id, data || []);
+    const prev = S.messages.get(id) || [];
+    const keys = new Map(prev.map((x) => [x.id, x._key]));
+    prev.forEach((x) => { if (x._realId) keys.set(x._realId, x._key); });
+    const fresh = (data || []).map((m) => Object.assign({}, m, { _key: keys.get(m.id) || m.id }));
+    const seen = new Set(fresh.map((m) => m.id));
+    const pending = prev.filter((x) => x._pending && !(x._realId && seen.has(x._realId)));
+    S.messages.set(id, fresh.concat(pending).sort(byTime));
   }
 
   // Asks the server to save a file the customer sent on WhatsApp; realtime then delivers the update.
@@ -402,7 +440,10 @@ window.IkrisChat = (() => {
     renderThreadHeader();
     renderAssign();
     renderFileChip();
-    $('#chat-messages').innerHTML = '<div class="chat-empty"><span class="spinner" aria-hidden="true"></span> Loading messages…</div>';
+    const box = $('#chat-messages');
+    box.innerHTML = '';
+    if (S.messages.has(id)) renderMessages(true);   // cached: show at once, refresh quietly below
+    else box.innerHTML = '<div class="chat-empty"><span class="spinner" aria-hidden="true"></span> Loading messages…</div>';
     try {
       await loadMessages(id);
       if (S.selected !== id) return;
@@ -535,75 +576,130 @@ window.IkrisChat = (() => {
     $('#chat-a-msg').textContent = '';
   }
 
-  async function renderMessages(scrollToEnd) {
-    const box = $('#chat-messages');
-    const list = S.messages.get(S.selected) || [];
-    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
-    if (!list.length) {
-      box.innerHTML = '<div class="chat-empty">No messages in this conversation yet.</div>';
-      return;
-    }
-    let lastDay = '';
-    const parts = [];
-    for (const m of list) {
+  function bubbleHtml(m) {
       const d = new Date(m.created_at);
-      const day = dayHeading(d);
-      if (day !== lastDay) { parts.push(`<div class="chat-day"><span>${esc(day)}</span></div>`); lastDay = day; }
       const out = m.direction === 'out';
       const who = m.sender_type === 'customer' ? (m.sender_name || 'Customer')
         : m.sender_type === 'bot' ? (m.sender_name || 'Ikris Bot')
           : m.sender_type === 'system' ? 'Inquiry form'
             : (m.sender_name || 'Agent');
       const tick = out ? deliveryIcon(m) : '';
-      parts.push(`
-        <div class="msg ${out ? 'msg--out' : 'msg--in'}${m.sender_type === 'bot' ? ' msg--bot' : ''}${m.sender_type === 'system' ? ' msg--system' : ''}" data-msg="${esc(m.id)}">
+      return `
+        <div class="msg ${out ? 'msg--out' : 'msg--in'}${m.sender_type === 'bot' ? ' msg--bot' : ''}${m.sender_type === 'system' ? ' msg--system' : ''}" data-msg="${esc(m._key || m.id)}">
           <div class="msg__bubble">
             <div class="msg__who">${esc(who)}${m.sender_type === 'bot' ? ' <span class="msg__tag">Bot</span>' : ''}${m.sender_type === 'system' ? ' <span class="msg__tag msg__tag--inq">Inquiry</span>' : ''}${m.template_name ? ` <span class="msg__tag msg__tag--tpl" title="WhatsApp template: ${esc(m.template_name)}">Template</span>` : ''}</div>
-            ${m.attachment_url || m.attachment_path || m.wa_media_id ? `<div class="msg__att" data-att="${esc(m.id)}"></div>` : ''}
+            ${m.attachment_url || m.attachment_path || m.wa_media_id || (m._pending && m.attachment_name) ? `<div class="msg__att" data-att="${esc(m.id)}"></div>` : ''}
             ${m.body ? `<div class="msg__text">${linkify(esc(m.body))}</div>` : ''}
             <div class="msg__foot"><time datetime="${esc(m.created_at)}">${esc(time(d))}</time>${tick}</div>
             ${m.delivery_status === 'failed' || m.delivery_status === 'not_sent'
-              ? `<div class="msg__err">${m.error ? esc(/^Not (sent|delivered)/.test(m.error) ? m.error : `Not delivered: ${m.error}`) : esc(m.delivery_status === 'not_sent' ? 'Saved — not sent to WhatsApp' : 'Not delivered')}</div>` : ''}
+              ? `<div class="msg__err">${m.error ? esc(/^Not (sent|delivered)/.test(m.error) ? m.error : `Not delivered: ${m.error}`) : esc(m.delivery_status === 'not_sent' ? 'Saved — not sent to WhatsApp' : 'Not delivered')}${m._pending ? ` <button type="button" class="link msg__retry" data-chat-resend="${esc(m._key)}">Retry</button>` : ''}</div>` : ''}
           </div>
-        </div>`);
-    }
-    box.innerHTML = parts.join('');
-    // Attachments (signed URLs for files sent from the dashboard)
-    for (const m of list) {
-      if (!m.attachment_url && !m.attachment_path && !m.wa_media_id) continue;
-      const el = box.querySelector(`[data-att="${CSS.escape(m.id)}"]`);
-      if (!el) continue;
-      if (!m.attachment_path && !m.attachment_url) {
-        // File the customer sent on WhatsApp that is not saved yet — fetch it now.
-        const failed = S.mediaFailed && S.mediaFailed.get(m.id);
-        el.innerHTML = failed
-          ? `<span class="msg__file msg__file--off">📎 ${esc(failed)}</span>`
-          : '<span class="msg__file msg__file--off"><span class="spinner" aria-hidden="true"></span> Loading file…</span>';
-        if (!failed) fetchCustomerFile(m);
-        continue;
-      }
-      const url = m.attachment_path ? await signedUrl(m.attachment_path) : m.attachment_url;
-      const name = m.attachment_name || (m.attachment_path || m.attachment_url || '').split('/').pop().split('?')[0].replace(/^in-[0-9a-f-]{36}-/, '') || 'Attachment';
-      if (!url) { el.innerHTML = `<span class="msg__file">📎 ${esc(name)} (unavailable)</span>`; continue; }
-      const type = m.attachment_type || '';
-      const saveAs = downloadName(m, name);
-      const dl = m.attachment_path ? await signedUrl(m.attachment_path, saveAs) : url;
-      const dlAttr = m.attachment_path ? '' : ` download="${esc(saveAs)}"`;
-      const actions = `<div class="att-actions">
-          <a class="att-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open in a new tab"><svg aria-hidden="true"><use href="#i-external"/></svg>Open</a>
-          <a class="att-btn att-btn--dl" href="${esc(dl)}"${dlAttr} title="Download as ${esc(saveAs)}"><svg aria-hidden="true"><use href="#i-download"/></svg>Download</a>
         </div>`;
-      const pdf = /pdf/i.test(type) || /\.pdf$/i.test(name);
-      el.innerHTML = isImage(type, name)
-        ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open full size"><img src="${esc(url)}" alt="${esc(name)}" loading="lazy"></a>${actions}`
-        : /^audio\//.test(type) ? `<audio controls preload="none" src="${esc(url)}"></audio>${actions}`
-        : /^video\//.test(type) ? `<video controls preload="metadata" src="${esc(url)}"></video>${actions}`
-        : `<div class="att-card">
-            <span class="att-card__ico${pdf ? ' att-card__ico--pdf' : ''}" aria-hidden="true">${pdf ? 'PDF' : '<svg><use href="#i-file"/></svg>'}</span>
-            <span class="att-card__name" title="${esc(name)}">${esc(name)}</span>
-          </div>${actions}`;
+  }
+
+  /* What a bubble looks like - if this does not change, the bubble is left untouched. */
+  const bubbleSig = (m) => [m.body, m.delivery_status, m.error, m.created_at, m.attachment_path, m.attachment_url,
+    m.attachment_name, m.attachment_type, m.wa_media_id, m.template_name, m.sender_name, m.sender_type,
+    m._pending ? 1 : 0, (S.mediaFailed && S.mediaFailed.get(m.id)) || ''].join('\u0001');
+
+  function nodeFrom(html) {
+    const t = document.createElement('template');
+    t.innerHTML = html.trim();
+    return t.content.firstElementChild;
+  }
+
+  /* Updates the open chat in place, like WhatsApp: existing bubbles stay where they are, only new or
+     changed ones are drawn. No flicker, images do not reload, the scroll position is kept. */
+  function renderMessages(scrollToEnd) {
+    const box = $('#chat-messages');
+    if (!box) return;
+    const list = S.messages.get(S.selected) || [];
+    const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
+    if (!list.length) {
+      box.innerHTML = '<div class="chat-empty">No messages in this conversation yet.</div>';
+      return;
     }
-    if (scrollToEnd || nearBottom) box.scrollTop = box.scrollHeight;
+    box.querySelectorAll(':scope > .chat-empty').forEach((n) => n.remove());
+    const existing = new Map();
+    Array.from(box.children).forEach((n) => { if (n.dataset.key) existing.set(n.dataset.key, n); else n.remove(); });
+    const wanted = new Set();
+    const fill = [];
+    let lastDay = '';
+    let cursor = box.firstElementChild;
+    const place = (key, make, sig) => {
+      wanted.add(key);
+      let node = existing.get(key);
+      if (!node || node.dataset.sig !== sig) {
+        const fresh = make();
+        fresh.dataset.key = key;
+        fresh.dataset.sig = sig;
+        if (node) { if (cursor === node) cursor = fresh; node.replaceWith(fresh); }
+        node = fresh;
+        existing.set(key, node);
+        if (fresh.querySelector('[data-att]')) fill.push(fresh);
+      }
+      if (cursor && cursor.parentNode !== box) cursor = null;
+      if (node !== cursor) box.insertBefore(node, cursor);
+      cursor = node.nextElementSibling;
+    };
+    for (const m of list) {
+      const day = dayHeading(new Date(m.created_at));
+      if (day !== lastDay) {
+        lastDay = day;
+        place('day:' + day, () => nodeFrom(`<div class="chat-day"><span>${esc(day)}</span></div>`), day);
+      }
+      place('m:' + (m._key || m.id), () => nodeFrom(bubbleHtml(m)), bubbleSig(m));
+    }
+    existing.forEach((n, k) => { if (!wanted.has(k)) n.remove(); });
+    fill.forEach((node) => fillAttachment(node));
+    if (scrollToEnd || nearBottom || S.stick) { box.scrollTop = box.scrollHeight; S.stick = true; }
+  }
+
+  /* Attachments (signed URLs) are drawn once per bubble, not on every update. */
+  async function fillAttachment(node) {
+    const list = S.messages.get(S.selected) || [];
+    const key = node.dataset.key.slice(2);
+    const m = list.find((x) => (x._key || x.id) === key);
+    const el = node.querySelector('[data-att]');
+    if (!m || !el) return;
+    if (m._pending && !m.attachment_path) {
+      el.innerHTML = `<span class="msg__file">📎 ${esc(m.attachment_name || 'Attachment')}</span>`;
+      return;
+    }
+    if (!m.attachment_path && !m.attachment_url) {
+      // File the customer sent on WhatsApp that is not saved yet - fetch it now.
+      const failed = S.mediaFailed && S.mediaFailed.get(m.id);
+      el.innerHTML = failed
+        ? `<span class="msg__file msg__file--off">📎 ${esc(failed)}</span>`
+        : '<span class="msg__file msg__file--off"><span class="spinner" aria-hidden="true"></span> Loading file…</span>';
+      if (!failed) fetchCustomerFile(m);
+      return;
+    }
+    const url = m.attachment_path ? await signedUrl(m.attachment_path) : m.attachment_url;
+    if (!node.isConnected) return;
+    const name = m.attachment_name || (m.attachment_path || m.attachment_url || '').split('/').pop().split('?')[0].replace(/^in-[0-9a-f-]{36}-/, '') || 'Attachment';
+    if (!url) { el.innerHTML = `<span class="msg__file">📎 ${esc(name)} (unavailable)</span>`; return; }
+    const type = m.attachment_type || '';
+    const saveAs = downloadName(m, name);
+    const dl = m.attachment_path ? await signedUrl(m.attachment_path, saveAs) : url;
+    const dlAttr = m.attachment_path ? '' : ` download="${esc(saveAs)}"`;
+    const actions = `<div class="att-actions">
+        <a class="att-btn" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open in a new tab"><svg aria-hidden="true"><use href="#i-external"/></svg>Open</a>
+        <a class="att-btn att-btn--dl" href="${esc(dl)}"${dlAttr} title="Download as ${esc(saveAs)}"><svg aria-hidden="true"><use href="#i-download"/></svg>Download</a>
+      </div>`;
+    const pdf = /pdf/i.test(type) || /\.pdf$/i.test(name);
+    el.innerHTML = isImage(type, name)
+      ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Open full size"><img src="${esc(url)}" alt="${esc(name)}" loading="lazy"></a>${actions}`
+      : /^audio\//.test(type) ? `<audio controls preload="none" src="${esc(url)}"></audio>${actions}`
+      : /^video\//.test(type) ? `<video controls preload="metadata" src="${esc(url)}"></video>${actions}`
+      : `<div class="att-card">
+          <span class="att-card__ico${pdf ? ' att-card__ico--pdf' : ''}" aria-hidden="true">${pdf ? 'PDF' : '<svg><use href="#i-file"/></svg>'}</span>
+          <span class="att-card__name" title="${esc(name)}">${esc(name)}</span>
+        </div>${actions}`;
+    if (node.isConnected && node === node.parentNode.lastElementChild) {
+      const box = $('#chat-messages');
+      if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 400) box.scrollTop = box.scrollHeight;
+    }
   }
 
   function deliveryIcon(m) {
@@ -646,43 +742,87 @@ window.IkrisChat = (() => {
     return { path, type: file.type || '', name: file.name };
   }
 
-  async function send() {
-    if (S.sending || !S.selected) return;
+  /* Sends like WhatsApp Web: the bubble appears at once with a clock, the box is free for the next
+     message straight away, and messages go out one after another in the order they were typed. */
+  function send() {
+    if (!S.selected) return;
     const input = $('#chat-text');
     const text = input.value.trim();
     const file = S.pendingFile;
     if (!text && !file) return;
     const convId = S.selected;
-    S.sending = true;
-    $('#chat-send').disabled = true;
-    $('#chat-send').setAttribute('aria-busy', 'true');
+    input.value = '';
+    autoGrow();
+    S.pendingFile = null;
+    renderFileChip();
+    input.focus();
+    if (!S.messages.has(convId)) S.messages.set(convId, []);
+    const key = 'tmp-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const temp = {
+      id: key, _key: key, _pending: true, _file: file || null,
+      conversation_id: convId, direction: 'out', sender_type: 'agent',
+      sender_name: (S.me && S.me.display_name) || myEmail(), sender_email: myEmail(),
+      body: text || null, attachment_name: file ? file.name : null, attachment_type: file ? (file.type || '') : null,
+      delivery_status: 'queued', error: null, created_at: new Date().toISOString(), is_read: true
+    };
+    S.messages.get(convId).push(temp);
+    renderMessages(true);
+    enqueue(convId, () => deliver(temp));
+  }
+
+  function enqueue(convId, job) {
+    const prev = S.queues.get(convId) || Promise.resolve();
+    const next = prev.then(job, job);
+    S.queues.set(convId, next.catch(() => {}));
+  }
+
+  async function deliver(temp) {
+    const convId = temp.conversation_id;
+    const live = () => (S.messages.get(convId) || []).find((x) => x._key === temp._key);
     try {
-      const att = file ? await uploadFile(convId, file) : null;
+      let att = temp._uploaded || null;
+      if (temp._file && !att) { att = await uploadFile(convId, temp._file); temp._uploaded = att; }
       const res = await invokeSend({
-        conversation_id: convId, text,
+        conversation_id: convId, text: temp.body,
         attachment_path: att && att.path, attachment_type: att && att.type, attachment_name: att && att.name
       });
-      input.value = '';
-      autoGrow();
-      S.pendingFile = null;
-      renderFileChip();
-      if (res && res.message) onMessage(res.message, false);
+      if (res && res.message) {
+        const cur = live();
+        if (cur && cur._pending) {   // realtime has not delivered it yet - swap the bubble for the saved message
+          const list = S.messages.get(convId);
+          const dup = list.findIndex((x) => x.id === res.message.id);
+          if (dup >= 0) list.splice(dup, 1);
+          const i = list.indexOf(cur);
+          list[i] = mergeMsg(Object.assign({}, cur, { _realId: res.message.id }), res.message);
+          list.sort(byTime);
+        } else {
+          upsertMessage(res.message);
+        }
+        if (S.selected === convId) renderMessages(false);
+      }
       if (res && res.conversation && res.conversation.id) {   // replying hands the chat to you and pauses the bot
         S.convs.set(res.conversation.id, res.conversation);
         if (S.selected === res.conversation.id) renderThreadHeader();
         renderListSoon();
       }
-      if (res && res.sent === false) {
-        ctx.toast({ type: 'error', title: 'Saved but not sent to WhatsApp', body: `<p class="muted small" style="margin-top:4px">${esc(res.message && res.message.error || 'WhatsApp sending is not configured yet.')}</p>`, timeout: 8000 });
-      }
     } catch (e) {
-      ctx.toast({ type: 'error', title: e.message || 'Message could not be sent.', timeout: 7000 });
-    } finally {
-      S.sending = false;
-      $('#chat-send').disabled = false;
-      $('#chat-send').setAttribute('aria-busy', 'false');
-      input.focus();
+      const cur = live();
+      if (cur) {
+        cur.delivery_status = 'failed';
+        cur.error = (e && e.message) || 'Message could not be sent.';
+        if (S.selected === convId) renderMessages(false);
+      }
     }
+  }
+
+  function resend(key) {
+    const list = S.messages.get(S.selected) || [];
+    const m = list.find((x) => x._key === key && x._pending);
+    if (!m) return;
+    m.delivery_status = 'queued';
+    m.error = null;
+    renderMessages(false);
+    enqueue(m.conversation_id, () => deliver(m));
   }
 
   async function saveAssignment() {
@@ -816,6 +956,8 @@ window.IkrisChat = (() => {
         renderFilters(); renderList(); return;
       }
       if (e.target.closest('[data-chat-unfile]')) { S.pendingFile = null; renderFileChip(); return; }
+      const rs = e.target.closest('[data-chat-resend]');
+      if (rs) { resend(rs.dataset.chatResend); return; }
       if (e.target.closest('#chat-back')) { closeThread(); return; }
       if (e.target.closest('#chat-search-btn')) {
         const box = $('#chat-search');
@@ -868,6 +1010,13 @@ window.IkrisChat = (() => {
     });
     $('#chat-send').addEventListener('click', send);
     $('#chat-file-input').addEventListener('change', (e) => { pickFile(e.target.files[0]); e.target.value = ''; });
+
+    // Stay pinned to the newest message (like WhatsApp) while the window, header or images change size.
+    const mbox = $('#chat-messages');
+    const atBottom = () => mbox.scrollHeight - mbox.scrollTop - mbox.clientHeight < 120;
+    mbox.addEventListener('scroll', () => { S.stick = atBottom(); }, { passive: true });
+    mbox.addEventListener('load', () => { if (S.stick) mbox.scrollTop = mbox.scrollHeight; }, true);
+    if (window.ResizeObserver) new ResizeObserver(() => { if (S.stick) mbox.scrollTop = mbox.scrollHeight; }).observe(mbox);
 
     const thread = $('#chat-thread');
     thread.addEventListener('dragover', (e) => { if (S.selected) { e.preventDefault(); thread.classList.add('is-drop'); } });
