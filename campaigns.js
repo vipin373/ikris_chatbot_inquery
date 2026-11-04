@@ -235,7 +235,7 @@ window.IkrisCampaigns = (function () {
   function mediaHtml(m) {
     if (!m || !m.format) return '';
     const f = m.format;
-    if (f === 'IMAGE' && m.url) return `<div class="wa-bubble__media"><img src="${esc(m.url)}" alt="Header image" loading="lazy"></div>`;
+    if (f === 'IMAGE' && m.url) return `<div class="wa-bubble__media wa-bubble__media--img"><img src="${esc(m.url)}" alt="Header image" loading="lazy" data-img-preview title="Click to view full image"></div>`;
     if (f === 'VIDEO' && m.url) return `<div class="wa-bubble__media wa-bubble__media--video"><video src="${esc(m.url)}" muted preload="metadata"></video><span class="wa-play" aria-hidden="true">▶</span></div>`;
     if (f === 'DOCUMENT') return `<div class="wa-bubble__doc"><span class="wa-doc-ico" aria-hidden="true">PDF</span><span>${esc(m.name || 'Document')}</span></div>`;
     return `<div class="wa-bubble__media wa-bubble__media--empty"><span>${f === 'VIDEO' ? 'Video' : 'Image'} header</span></div>`;
@@ -568,7 +568,7 @@ window.IkrisCampaigns = (function () {
     const rule = MEDIA_RULES[f];
     const m = sendMedia();
     $('#send-media-file').accept = rule.accept;
-    const thumb = m && m.url && f === 'IMAGE' ? `<img src="${esc(m.url)}" alt="" class="send-media__thumb">` : `<span class="send-media__ico" aria-hidden="true">${f === 'DOCUMENT' ? 'PDF' : f === 'VIDEO' ? '▶' : '🖼'}</span>`;
+    const thumb = m && m.url && f === 'IMAGE' ? `<img src="${esc(m.url)}" alt="" class="send-media__thumb" data-img-preview title="Click to view full image">` : `<span class="send-media__ico" aria-hidden="true">${f === 'DOCUMENT' ? 'PDF' : f === 'VIDEO' ? '▶' : '🖼'}</span>`;
     box.innerHTML = `<p class="send-label">Header ${rule.noun}</p>
       <div class="send-media__row">
         ${m && m.uploading ? '<span class="spinner" aria-hidden="true"></span>' : thumb}
@@ -838,8 +838,54 @@ window.IkrisCampaigns = (function () {
   }
 
   /* ---------------- events ---------------- */
+  /* ---------------- image preview (lightbox) ---------------- */
+  let lbReturn = null;
+  function lightbox() {
+    let lb = document.getElementById('img-lightbox');
+    if (lb) return lb;
+    lb = document.createElement('div');
+    lb.id = 'img-lightbox';
+    lb.className = 'img-lightbox';
+    lb.hidden = true;
+    lb.setAttribute('role', 'dialog');
+    lb.setAttribute('aria-modal', 'true');
+    lb.setAttribute('aria-label', 'Image preview');
+    lb.innerHTML = '<button type="button" class="img-lightbox__close" data-lb-close aria-label="Close preview">×</button>'
+      + '<figure class="img-lightbox__fig"><img alt=""><figcaption></figcaption></figure>';
+    document.body.appendChild(lb);
+    return lb;
+  }
+  function openLightbox(img) {
+    const lb = lightbox();
+    const big = lb.querySelector('img');
+    big.src = img.currentSrc || img.src;
+    big.alt = img.alt || 'Image preview';
+    const card = img.closest('.tpl-card');
+    const title = card && card.querySelector('.tpl-card__head h3');
+    lb.querySelector('figcaption').textContent = title ? title.textContent : '';
+    lbReturn = document.activeElement;
+    lb.hidden = false;
+    lb.querySelector('[data-lb-close]').focus();
+  }
+  function closeLightbox() {
+    const lb = document.getElementById('img-lightbox');
+    if (!lb || lb.hidden) return false;
+    lb.hidden = true;
+    lb.querySelector('img').removeAttribute('src');
+    if (lbReturn && lbReturn.focus) lbReturn.focus();
+    lbReturn = null;
+    return true;
+  }
+
   function bind() {
     document.addEventListener('click', (e) => {
+      const lbOpen = document.getElementById('img-lightbox');
+      if (lbOpen && !lbOpen.hidden) {
+        if (e.target.closest('[data-lb-close]') || !e.target.closest('.img-lightbox__fig img')) closeLightbox();
+        return;
+      }
+      const pv = e.target.closest('img[data-img-preview]');
+      if (pv) { e.preventDefault(); openLightbox(pv); return; }
       const tab = e.target.closest('[data-cmp-tab]');
       if (tab) { S.tab = tab.dataset.cmpTab; renderAll(); if (S.tab === 'templates' && staleTemplates()) sync(true); return; }
       if (e.target.closest('#cmp-new-template')) { openTemplateDialog(); return; }
@@ -875,6 +921,7 @@ window.IkrisCampaigns = (function () {
       if (rm) { readTplButtons(); S.tplButtons.splice(Number(rm.closest('[data-btn-row]').dataset.btnRow), 1); renderTplButtons(); renderTplPreview(); }
     });
     document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && closeLightbox()) { e.stopPropagation(); return; }
       if (e.key === 'Escape' && !$('#cmp-scrim').hidden) closeDialogs();
       if (e.key === 'Enter' && e.target.closest && e.target.closest('#cmp-rows [data-cmp]')) openDetail(e.target.closest('[data-cmp]').dataset.cmp);
     });
