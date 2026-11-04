@@ -799,6 +799,18 @@ td.cmp-empty { display: table-cell; }
 .cmp-badge--done { background: var(--success-bg); color: var(--success); }
 .cmp-badge--sending { background: var(--info-bg); color: var(--navy-600); }
 .cmp-badge--failed { background: var(--error-bg); color: var(--error); }
+.cmp-badge--scheduled { background: #FFF4E0; color: #8A5300; }
+.cmp-badge--cancelled { background: #EEF0F3; color: var(--muted); }
+.send-when { display: grid; gap: 2px; }
+.send-when__pick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 8px; }
+.send-when__pick input, .cmp-sched input { height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font: inherit; font-size: 13.5px; background: var(--white); color: var(--text); max-width: 100%; }
+.send-when__hint--err, .cmp-sched__err { color: var(--error); }
+.cmp-sched { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; margin-bottom: 14px; border-radius: var(--radius); background: #FFF8EC; border: 1px solid #F3DDB5; }
+.cmp-sched__text { flex: 1 1 260px; font-size: 13.5px; }
+.cmp-sched__text b { display: block; }
+.cmp-sched__row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cmp-sched--failed { background: var(--error-bg); border-color: #F2C4C4; }
+.cmp-sched--cancelled { background: #F4F5F7; border-color: var(--border); }
 .spinner--xs { width: 12px; height: 12px; border-width: 2px; }
 
 /* templates */

@@ -18,7 +18,7 @@ window.IkrisCampaigns = (function () {
   const norm = (t) => String(t ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
   const num = (n) => Number(n || 0).toLocaleString('en-IN');
-  const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '—');
+  const pct = (a, b) => (b ? `${Math.round(((Number(a) || 0) / b) * 100)}%` : '—');
   const phoneLabel = (p) => (p ? `+${String(p).replace(/\D/g, '')}` : '');
   const dateTime = (iso) => {
     if (!iso) return '—';
@@ -189,9 +189,36 @@ window.IkrisCampaigns = (function () {
     $('#cmp-overview-sub').textContent = `Last 30 days · ${recent.length} campaign${recent.length === 1 ? '' : 's'}${isAdmin() ? ' · all departments' : ''}`;
   }
 
+  const shortWhen = (iso) => new Date(iso).toLocaleString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const canManage = (c) => isAdmin() || ((me() && me().email) || '').toLowerCase() === String(c.created_by || '').toLowerCase();
+  const pad2 = (n) => String(n).padStart(2, '0');
+  /** Date → value for <input type="datetime-local"> in the viewer's own time zone. */
+  const toLocalInput = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const MIN_LEAD = 2 * 60 * 1000;
+  const MAX_LEAD = 60 * 24 * 3600 * 1000;
+  function untilText(ms) {
+    const m = Math.round(ms / 60000);
+    if (m < 60) return `in ${m} min`;
+    const h = Math.floor(m / 60);
+    if (h < 48) return `in ${h} h${m % 60 ? ` ${m % 60} min` : ''}`;
+    return `in ${Math.round(h / 24)} days`;
+  }
+  /** Reads a datetime-local input → { iso } or { error }. */
+  function readWhen(input) {
+    const v = input.value;
+    if (!v) return { error: 'Choose the date and time.' };
+    const t = new Date(v).getTime();
+    if (!Number.isFinite(t)) return { error: 'Choose a valid date and time.' };
+    if (t - Date.now() < MIN_LEAD) return { error: 'Choose a time at least 2 minutes from now.' };
+    if (t - Date.now() > MAX_LEAD) return { error: 'You can schedule at most 60 days ahead.' };
+    return { iso: new Date(t).toISOString(), at: t };
+  }
+
   function campaignBadge(c) {
+    if (c.status === 'scheduled') return `<span class="cmp-badge cmp-badge--scheduled" title="Sends automatically at this time">🕒 Scheduled · ${esc(shortWhen(c.scheduled_at))}</span>`;
+    if (c.status === 'cancelled') return '<span class="cmp-badge cmp-badge--cancelled">Cancelled</span>';
     if (c.status === 'sending') return `<span class="cmp-badge cmp-badge--sending"><span class="spinner spinner--xs" aria-hidden="true"></span>Sending ${num((c.sent || 0) + (c.failed || 0))}/${num(c.total)}</span>`;
-    if (c.status === 'failed') return '<span class="cmp-badge cmp-badge--failed">Failed</span>';
+    if (c.status === 'failed') return `<span class="cmp-badge cmp-badge--failed"${c.error ? ` title="${esc(c.error)}"` : ''}>Failed</span>`;
     return '<span class="cmp-badge cmp-badge--done">Complete</span>';
   }
 
@@ -211,7 +238,7 @@ window.IkrisCampaigns = (function () {
         <td><b>${esc(c.name)}</b>${c.department ? `<div class="muted small">${esc(c.department)}</div>` : ''}</td>
         <td class="mono small">${esc(c.template_name)}</td>
         <td>${esc(c.created_by_name || c.created_by)}</td>
-        <td class="small">${esc(dateTime(c.created_at))}</td>
+        <td class="small">${esc(dateTime(c.created_at))}${c.scheduled_at ? `<div class="muted small">Send: ${esc(dateTime(c.scheduled_at))}</div>` : ''}</td>
         <td class="num">${num(c.total)}</td>
         <td class="num">${num(s.sent)}</td>
         <td class="num">${num(s.delivered)}</td>
@@ -527,6 +554,14 @@ window.IkrisCampaigns = (function () {
     if (chatMode) $('#send-to').innerHTML = `To <b>${esc(opts.conv.customer_name || phoneLabel(opts.conv.customer_phone))}</b> <span class="muted">${esc(phoneLabel(opts.conv.customer_phone))}</span>`;
     $('#send-name').value = '';
     $('#send-msg').textContent = '';
+    $('#send-when').hidden = chatMode;
+    S.send.when = 'now';
+    const def = new Date(Date.now() + 60 * 60 * 1000);
+    def.setMinutes(Math.ceil(def.getMinutes() / 5) * 5, 0, 0);
+    $('#send-when-at').value = toLocalInput(def);
+    $('#send-when-at').min = toLocalInput(new Date(Date.now() + MIN_LEAD));
+    $('#send-when-at').max = toLocalInput(new Date(Date.now() + MAX_LEAD));
+    renderWhen();
 
     const list = approved();
     $('#send-template').innerHTML = list.length
@@ -740,7 +775,9 @@ window.IkrisCampaigns = (function () {
       return;
     }
     const n = S.send.selected.size;
-    label.textContent = S.confirmArmed ? `Confirm — send to ${n} contact${n === 1 ? '' : 's'}` : `Send to ${n} contact${n === 1 ? '' : 's'}`;
+    const verb = S.send.when === 'later' ? 'schedule for' : 'send to';
+    const Verb = verb[0].toUpperCase() + verb.slice(1);
+    label.textContent = S.confirmArmed ? `Confirm — ${verb} ${n} contact${n === 1 ? '' : 's'}` : `${Verb} ${n} contact${n === 1 ? '' : 's'}`;
     b.classList.toggle('btn--danger-confirm', S.confirmArmed);
     b.disabled = !t || !n || mediaBlocked;
   }
@@ -764,18 +801,26 @@ window.IkrisCampaigns = (function () {
       const name = $('#send-name').value.trim();
       if (!name) { msg.textContent = 'Give the campaign a name.'; $('#send-name').focus(); return; }
       if (!S.send.selected.size) { msg.textContent = 'Select at least one contact.'; return; }
+      const later = S.send.when === 'later';
+      const when = later ? readWhen($('#send-when-at')) : null;
+      if (when && when.error) { msg.textContent = when.error; renderWhen(); $('#send-when-at').focus(); return; }
       if (!S.confirmArmed) { S.confirmArmed = true; updateSendButton(); return; }
       btn.disabled = true; btn.setAttribute('aria-busy', 'true');
       try {
         const dep = $('#aud-dept').value;
         const res = await invoke({
           action: 'send_campaign', name, template_name: t.name, language: t.language, variables: vars,
-          contact_ids: Array.from(S.send.selected), department: dep && dep !== '__none' ? dep : null
+          contact_ids: Array.from(S.send.selected), department: dep && dep !== '__none' ? dep : null,
+          scheduled_at: when ? when.iso : null
         });
         closeDialogs();
         S.tab = 'campaigns';
         await loadCampaigns();
         renderAll();
+        if (res.scheduled) {
+          ctx.toast({ type: 'success', title: `Campaign “${name}” scheduled.`, body: `<p class="muted small" style="margin-top:4px">It will be sent automatically to ${num(res.campaign && res.campaign.total)} contacts on ${esc(shortWhen(res.campaign.scheduled_at))}. You can change the time or cancel it from the campaign list.${res.skipped ? ` ${res.skipped} contact(s) were skipped (opted out or outside your department).` : ''}</p>`, timeout: 8000 });
+          return;
+        }
         ctx.toast({ type: 'success', title: `Campaign “${name}” started.`, body: `<p class="muted small" style="margin-top:4px">Sending to ${num(res.campaign && res.campaign.total)} contacts. Progress updates here automatically.${res.skipped ? ` ${res.skipped} contact(s) were skipped (opted out or outside your department).` : ''}</p>`, timeout: 7000 });
       } catch (err) {
         msg.textContent = err.message;
@@ -803,12 +848,95 @@ window.IkrisCampaigns = (function () {
     }
   }
 
+  /* ---------------- scheduling ---------------- */
+  function renderWhen() {
+    if (!S.send) return;
+    const later = S.send.when === 'later';
+    $$('#send-when-seg [data-when]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.when === S.send.when)));
+    $('#send-when-pick').hidden = !later;
+    const hint = $('#send-when-hint');
+    if (later) {
+      const w = readWhen($('#send-when-at'));
+      hint.classList.toggle('send-when__hint--err', !!w.error);
+      hint.textContent = w.error || `Sends automatically on ${shortWhen(w.iso)} (${untilText(w.at - Date.now())}) · your local time`;
+    }
+    $('#send-cost-note').textContent = later
+      ? 'Scheduled campaigns are sent even if nobody has the dashboard open. Only message people who have agreed to hear from Ikris on WhatsApp; Meta charges per template message.'
+      : 'Only message people who have agreed to hear from Ikris on WhatsApp. Meta charges per template message (marketing messages cost more than utility).';
+    updateSendButton();
+  }
+
+  function renderSchedPanel(c) {
+    const box = $('#cmp-detail-sched');
+    box.className = 'cmp-sched';
+    if (c.status === 'scheduled') {
+      const mine = canManage(c);
+      box.innerHTML = `<div class="cmp-sched__text"><b>🕒 Scheduled for ${esc(shortWhen(c.scheduled_at))}</b>
+          <span class="muted small">${esc(untilText(new Date(c.scheduled_at).getTime() - Date.now()))} · sent automatically to ${num(c.total)} contact${c.total === 1 ? '' : 's'}</span></div>
+        ${mine ? `<div class="cmp-sched__row">
+          <input type="datetime-local" id="sched-at" value="${esc(toLocalInput(new Date(c.scheduled_at)))}" min="${esc(toLocalInput(new Date(Date.now() + MIN_LEAD)))}" aria-label="New send time">
+          <button type="button" class="btn btn--ghost btn--sm" data-sched-save="${esc(c.id)}">Change time</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-sched-cancel="${esc(c.id)}">Cancel campaign</button>
+        </div>` : '<span class="muted small">Only an admin or the person who scheduled it can change or cancel it.</span>'}
+        <span class="small cmp-sched__err" id="sched-msg" role="alert"></span>`;
+      box.hidden = false;
+    } else if (c.status === 'cancelled') {
+      box.classList.add('cmp-sched--cancelled');
+      box.innerHTML = `<div class="cmp-sched__text"><b>Cancelled</b><span class="muted small">It was scheduled for ${esc(shortWhen(c.scheduled_at))}${c.cancelled_by ? ` · cancelled by ${esc(c.cancelled_by)}` : ''}. Nothing was sent.</span></div>`;
+      box.hidden = false;
+    } else if (c.status === 'failed' && c.error) {
+      box.classList.add('cmp-sched--failed');
+      box.innerHTML = `<div class="cmp-sched__text"><b>Not sent</b><span class="small">${esc(c.error)}</span></div>`;
+      box.hidden = false;
+    } else if (c.scheduled_at) {
+      box.innerHTML = `<div class="cmp-sched__text"><span class="small">Scheduled campaign · started ${esc(dateTime(c.started_at || c.scheduled_at))}</span></div>`;
+      box.hidden = false;
+    } else {
+      box.hidden = true;
+      box.innerHTML = '';
+    }
+  }
+
+  async function saveSchedule(id) {
+    const msg = $('#sched-msg');
+    const w = readWhen($('#sched-at'));
+    if (w.error) { msg.textContent = w.error; return; }
+    const btn = $(`[data-sched-save="${CSS.escape(id)}"]`);
+    btn.disabled = true;
+    try {
+      const res = await invoke({ action: 'reschedule_campaign', id, scheduled_at: w.iso });
+      await loadCampaigns(); renderAll();
+      const c = S.campaigns.find((x) => x.id === id) || res.campaign;
+      if (c) renderSchedPanel(c);
+      ctx.toast({ type: 'success', title: `New send time: ${shortWhen(res.campaign.scheduled_at)}.`, timeout: 4000 });
+    } catch (err) {
+      msg.textContent = err.message;
+      btn.disabled = false;
+    }
+  }
+
+  async function cancelScheduled(id, btn) {
+    if (btn.dataset.armed !== '1') { btn.dataset.armed = '1'; btn.textContent = 'Click again to cancel'; btn.classList.add('btn--danger-confirm'); return; }
+    btn.disabled = true;
+    try {
+      await invoke({ action: 'cancel_campaign', id });
+      await loadCampaigns(); renderAll();
+      const c = S.campaigns.find((x) => x.id === id);
+      if (c) { renderSchedPanel(c); $('#cmp-detail-stats').innerHTML = statTiles(Object.assign({ total: c.total }, S.stats.get(c.id) || {})); }
+      ctx.toast({ type: 'success', title: 'Scheduled campaign cancelled. Nothing was sent.', timeout: 5000 });
+    } catch (err) {
+      $('#sched-msg').textContent = err.message;
+      btn.disabled = false;
+    }
+  }
+
   /* ---------------- campaign details ---------------- */
   async function openDetail(id) {
     const c = S.campaigns.find((x) => x.id === id);
     if (!c) return;
     $('#cmp-detail-title').textContent = c.name;
     $('#cmp-detail-sub').textContent = `Template ${c.template_name} · ${dateTime(c.created_at)} · by ${c.created_by_name || c.created_by}`;
+    renderSchedPanel(c);
     $('#cmp-detail-stats').innerHTML = statTiles(Object.assign({ total: c.total }, S.stats.get(c.id) || {}));
     $('#cmp-detail-rows').innerHTML = '<tr><td colspan="4" class="cmp-empty"><span class="spinner" aria-hidden="true"></span> Loading…</td></tr>';
     openDialog('cmp-detail');
@@ -902,6 +1030,12 @@ window.IkrisCampaigns = (function () {
       }
       const del = e.target.closest('[data-tpl-delete]');
       if (del) { deleteTemplate(del.dataset.tplDelete); return; }
+      const whenBtn = e.target.closest('#send-when-seg [data-when]');
+      if (whenBtn && S.send) { S.send.when = whenBtn.dataset.when; S.confirmArmed = false; $('#send-msg').textContent = ''; renderWhen(); return; }
+      const sSave = e.target.closest('[data-sched-save]');
+      if (sSave) { saveSchedule(sSave.dataset.schedSave); return; }
+      const sCancel = e.target.closest('[data-sched-cancel]');
+      if (sCancel) { cancelScheduled(sCancel.dataset.schedCancel, sCancel); return; }
       const row = e.target.closest('#cmp-rows [data-cmp]');
       if (row) { openDetail(row.dataset.cmp); return; }
       const rec = e.target.closest('#cmp-detail-rows [data-open-conv]');
@@ -961,6 +1095,7 @@ window.IkrisCampaigns = (function () {
 
     // send form
     $('#send-form').addEventListener('submit', submitSend);
+    $('#send-when-at').addEventListener('input', () => { S.confirmArmed = false; renderWhen(); });
     $('#send-template').addEventListener('change', () => { S.confirmArmed = false; if (S.send) S.send.media = null; renderSendMedia(); renderVars(); renderSendPreview(); updateSendButton(); });
     $('#send-vars').addEventListener('change', (e) => { if (e.target.matches('[data-var-src]')) syncVarInputs(); renderSendPreview(); });
     $('#send-vars').addEventListener('input', renderSendPreview);

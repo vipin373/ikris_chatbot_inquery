@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261104b">
-  <link rel="stylesheet" href="theme.css?v=20261104b">
+  <link rel="stylesheet" href="style.css?v=20261104c">
+  <link rel="stylesheet" href="theme.css?v=20261104c">
 </head>
 <body>
 
@@ -968,6 +968,17 @@ Content-Type: application/json
             <label class="aud-all"><input type="checkbox" id="aud-all"> <span>Select all shown</span></label>
             <ul class="aud-list" id="aud-list"></ul>
           </div>
+          <div class="send-when" id="send-when">
+            <p class="send-label">When to send</p>
+            <div class="seg" id="send-when-seg" role="radiogroup" aria-label="When to send">
+              <button type="button" role="radio" data-when="now" aria-checked="true">Send now</button>
+              <button type="button" role="radio" data-when="later" aria-checked="false">Schedule for later</button>
+            </div>
+            <div class="send-when__pick" id="send-when-pick" hidden>
+              <input type="datetime-local" id="send-when-at" aria-label="Send date and time">
+              <span class="field__hint" id="send-when-hint"></span>
+            </div>
+          </div>
           <p class="field__hint" id="send-cost-note">Only message people who have agreed to hear from Ikris on WhatsApp. Meta charges per template message (marketing messages cost more than utility).</p>
           <p class="chat-assign__msg is-error" id="send-msg" role="alert"></p>
         </div>
@@ -990,6 +1001,7 @@ Content-Type: application/json
         <button type="button" class="icon-btn" data-cmp-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
       </header>
       <div class="modal__body">
+        <div class="cmp-sched" id="cmp-detail-sched" hidden></div>
         <div class="cmp-stats cmp-stats--sm" id="cmp-detail-stats"></div>
         <div class="table-wrap"><table class="table cmp-rec"><thead><tr><th>Contact</th><th>Number</th><th>Status</th><th>Note</th></tr></thead><tbody id="cmp-detail-rows"></tbody></table></div>
       </div>
@@ -1075,11 +1087,11 @@ Content-Type: application/json
   <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <script src="chat.js?v=20261104b"></script>
-  <script src="contacts.js?v=20261104b"></script>
-  <script src="campaigns.js?v=20261104b"></script>
-  <script src="integrations.js?v=20261104b"></script>
-  <script src="app.js?v=20261104b"></script>
-  <script src="ui.js?v=20261104b"></script>
+  <script src="chat.js?v=20261104c"></script>
+  <script src="contacts.js?v=20261104c"></script>
+  <script src="campaigns.js?v=20261104c"></script>
+  <script src="integrations.js?v=20261104c"></script>
+  <script src="app.js?v=20261104c"></script>
+  <script src="ui.js?v=20261104c"></script>
 </body>
 </html>

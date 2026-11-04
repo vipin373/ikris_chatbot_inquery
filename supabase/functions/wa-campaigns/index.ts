@@ -1,14 +1,21 @@
 // =====================================================================
 //  wa-campaigns — WhatsApp templates & campaigns for the Ikris dashboard.
-//  Auth: the signed-in user's Supabase token (verify_jwt = true) + chat_staff.
+//  Auth: the signed-in user's Supabase token (checked here with auth.getUser) + chat_staff.
+//  Deployed with verify_jwt = false so pg_cron can call run_scheduled with the shared secret;
+//  every other action still requires a valid user session.
 //
 //  POST { action, ... }
 //    sync_templates                      → refresh the template list from Meta
 //    create_template  { template }       → submit a new template for Meta approval
 //    delete_template  { name }           → delete a template (admin or its creator)
 //    edit_template    { template }       → change an existing template (re-reviewed by Meta)
-//    send_campaign    { name, template_name, language, variables, conversation_ids }
+//    send_campaign    { name, template_name, language, variables, conversation_ids, scheduled_at? }
+//                       scheduled_at (ISO time) → saved as "scheduled" and sent automatically later
+//    cancel_campaign  { id }                    → cancel a scheduled campaign (admin or its creator)
+//    reschedule_campaign { id, scheduled_at }   → change the send time of a scheduled campaign
 //    send_template    { conversation_id, template_name, language, variables }
+//    run_scheduled    (pg_cron, header x-ikris-secret = chat_settings.ingest_secret, no user)
+//                       → starts every scheduled campaign that is due
 //
 //  Meta calls go through the n8n webhook in chat_settings.wa_api_webhook_url
 //  (secret header x-ikris-secret = chat_settings.send_webhook_secret), so the
@@ -43,6 +50,8 @@ const canSeeConv = (s: Staff, c: Record<string, any>) =>
   isAdmin(s) || canSeeDept(s, c.department) || (c.shared_departments ?? []).some((d) => canSeeDept(s, d));
 
 const MAX_RECIPIENTS = 1000;
+const MIN_LEAD_MS = 2 * 60 * 1000;            // schedule at least 2 minutes ahead
+const MAX_LEAD_MS = 60 * 24 * 3600 * 1000;     // and at most 60 days ahead
 const MEDIA_FORMATS = ["IMAGE", "VIDEO", "DOCUMENT"];
 const MEDIA_RULES: Record<string, { types: string[]; max: number; label: string }> = {
   IMAGE: { types: ["image/jpeg", "image/png"], max: 5 * 1024 * 1024, label: "JPG or PNG image up to 5 MB" },
@@ -498,9 +507,9 @@ async function loadTemplate(name: string, language: string) {
   return { tpl: data };
 }
 
-async function runCampaign(staff: Staff, campaignId: string, tpl: Record<string, any>, vars: Vars, convs: Record<string, any>[], sendCtx: SendCtx) {
+async function runCampaign(staff: Staff, campaignId: string, tpl: Record<string, any>, vars: Vars, convs: Record<string, any>[], sendCtx: SendCtx, failedBefore = 0) {
   let sent = 0;
-  let failed = 0;
+  let failed = failedBefore;
   const queue = [...convs];
   const worker = async () => {
     while (queue.length) {
@@ -587,6 +596,8 @@ async function sendCampaign(staff: Staff, input: Record<string, any>, userToken:
     if (sh.error) return { ok: false, error: sh.error };
     sendCtx.sheet = sh.rows!;
   }
+  const when = scheduleTime(input.scheduled_at);
+  if (when.error) return { ok: false, error: when.error };
   const { data: campaign, error } = await admin.from("campaigns").insert({
     name,
     template_name: t.tpl!.name,
@@ -596,12 +607,18 @@ async function sendCampaign(staff: Staff, input: Record<string, any>, userToken:
     total: allowed.length,
     created_by: staff.email,
     created_by_name: staff.display_name,
+    status: when.at ? "scheduled" : "sending",
+    scheduled_at: when.at,
+    started_at: when.at ? null : new Date().toISOString(),
   }).select("*").single();
   if (error || !campaign) return { ok: false, error: "Could not create the campaign." };
 
   await admin.from("campaign_recipients").insert(allowed.map((c) => ({
     campaign_id: campaign.id, conversation_id: c.id, contact_id: contactOf.get(c.id) ?? null, phone: c.customer_phone, customer_name: c.customer_name,
+    // Scheduled: keep the Google Sheet values read now (with the scheduler's access) for the send.
+    sheet_row: when.at && sendCtx.sheet ? sheetRowFor(c, sendCtx.sheet) : null,
   })));
+  if (when.at) return { ok: true, campaign, scheduled: true, skipped: ids.length + contactIds.length - allowed.length, opted_out: optedOut };
 
   // Keep sending after the response is returned.
   const job = runCampaign(staff, campaign.id, t.tpl!, vars, allowed, sendCtx).catch(async (e) => {
@@ -613,6 +630,102 @@ async function sendCampaign(staff: Staff, input: Record<string, any>, userToken:
   if (rt?.waitUntil) rt.waitUntil(job); else await job;
 
   return { ok: true, campaign, skipped: ids.length + contactIds.length - allowed.length, opted_out: optedOut };
+}
+
+/** Validates an optional schedule time. Returns { at: ISO | null } or { error }. */
+function scheduleTime(v: unknown): { at?: string | null; error?: string } {
+  if (v === null || v === undefined || v === "") return { at: null };
+  const t = Date.parse(String(v));
+  if (!Number.isFinite(t)) return { error: "Choose a valid date and time." };
+  const lead = t - Date.now();
+  if (lead < MIN_LEAD_MS) return { error: "Choose a time at least 2 minutes from now (or send now)." };
+  if (lead > MAX_LEAD_MS) return { error: "A campaign can be scheduled at most 60 days ahead." };
+  return { at: new Date(t).toISOString() };
+}
+
+const canManageCampaign = (staff: Staff, c: Record<string, any>) => isAdmin(staff) || (c.created_by ?? "") === staff.email;
+
+async function cancelCampaign(staff: Staff, input: Record<string, any>) {
+  const { data: c } = await admin.from("campaigns").select("*").eq("id", String(input.id ?? "")).maybeSingle();
+  if (!c) return { ok: false, error: "Campaign not found." };
+  if (!canManageCampaign(staff, c)) return { ok: false, error: "Only an admin or the person who scheduled this campaign can cancel it." };
+  const { data } = await admin.from("campaigns")
+    .update({ status: "cancelled", cancelled_at: new Date().toISOString(), cancelled_by: staff.display_name ?? staff.email })
+    .eq("id", c.id).eq("status", "scheduled").select("*");
+  if (!data?.length) return { ok: false, error: "This campaign is no longer scheduled — it may already be sending." };
+  return { ok: true, campaign: data[0] };
+}
+
+async function rescheduleCampaign(staff: Staff, input: Record<string, any>) {
+  const { data: c } = await admin.from("campaigns").select("*").eq("id", String(input.id ?? "")).maybeSingle();
+  if (!c) return { ok: false, error: "Campaign not found." };
+  if (!canManageCampaign(staff, c)) return { ok: false, error: "Only an admin or the person who scheduled this campaign can change it." };
+  const when = scheduleTime(input.scheduled_at);
+  if (when.error) return { ok: false, error: when.error };
+  if (!when.at) return { ok: false, error: "Choose a date and time." };
+  const { data } = await admin.from("campaigns").update({ scheduled_at: when.at }).eq("id", c.id).eq("status", "scheduled").select("*");
+  if (!data?.length) return { ok: false, error: "This campaign is no longer scheduled — it may already be sending." };
+  return { ok: true, campaign: data[0] };
+}
+
+/** Called every minute by pg_cron: starts every scheduled campaign whose time has come. */
+async function runScheduled() {
+  // Atomic claim: only one caller can move a campaign from "scheduled" to "sending".
+  const { data: due, error } = await admin.from("campaigns")
+    .update({ status: "sending", started_at: new Date().toISOString() })
+    .eq("status", "scheduled").lte("scheduled_at", new Date().toISOString())
+    .select("*");
+  if (error) return { ok: false, error: error.message };
+  const jobs = (due ?? []).map((c) => startScheduled(c).catch(async (e) => {
+    console.error(e);
+    await failCampaign(c.id, "The campaign could not start. Please create it again.");
+  }));
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  const all = Promise.all(jobs);
+  if (rt?.waitUntil) rt.waitUntil(all); else await all;
+  return { ok: true, started: (due ?? []).length };
+}
+
+async function failCampaign(id: string, reason: string) {
+  await admin.from("campaigns").update({ status: "failed", error: reason, completed_at: new Date().toISOString() }).eq("id", id);
+  await admin.from("campaign_recipients").update({ status: "failed", error: reason }).eq("campaign_id", id).eq("status", "pending");
+}
+
+async function startScheduled(c: Record<string, any>) {
+  const { data: staffRow } = await admin.from("chat_staff").select("*").eq("email", c.created_by).maybeSingle();
+  if (!staffRow) return failCampaign(c.id, "Not sent: the person who scheduled it no longer has WhatsApp access.");
+  const staff = { ...staffRow, departments: staffRow.departments ?? [] } as Staff;
+  const t = await loadTemplate(c.template_name, c.template_language);   // still approved at send time?
+  if (t.error) return failCampaign(c.id, `Not sent: ${t.error}`);
+
+  const { data: recs } = await admin.from("campaign_recipients").select("*").eq("campaign_id", c.id).eq("status", "pending");
+  const list = recs ?? [];
+  // Contacts who opted out after the campaign was scheduled are skipped.
+  const contactIds = list.map((r) => r.contact_id).filter(Boolean);
+  const optedOut = new Set<string>();
+  for (let i = 0; i < contactIds.length; i += 200) {
+    const { data } = await admin.from("contacts").select("id").in("id", contactIds.slice(i, i + 200)).eq("opted_out", true);
+    (data ?? []).forEach((x) => optedOut.add(x.id));
+  }
+  const convIds = list.filter((r) => !optedOut.has(r.contact_id) && r.conversation_id).map((r) => r.conversation_id);
+  const convs: Record<string, any>[] = [];
+  for (let i = 0; i < convIds.length; i += 200) {
+    const { data } = await admin.from("chat_conversations").select("*").in("id", convIds.slice(i, i + 200));
+    convs.push(...(data ?? []));
+  }
+  const found = new Set(convs.map((x) => x.id));
+  const skipped = list.filter((r) => optedOut.has(r.contact_id) || !found.has(r.conversation_id));
+  for (const r of skipped) {
+    await admin.from("campaign_recipients").update({
+      status: "failed", error: optedOut.has(r.contact_id) ? "Not sent: the contact opted out." : "Not sent: the chat no longer exists.",
+    }).eq("id", r.id);
+  }
+  if (!convs.length) return failCampaign(c.id, "Not sent: none of the contacts could be messaged.");
+
+  const sheetRows = list.map((r) => r.sheet_row).filter(Boolean) as SheetRow[];
+  const sendCtx: SendCtx = { sheet: sheetRows.length ? sheetRows : null, variants: new Map() };
+  await runCampaign(staff, c.id, t.tpl!, (c.variables ?? {}) as Vars, convs, sendCtx, skipped.length);
 }
 
 async function sendTemplateToChat(staff: Staff, input: Record<string, any>, userToken: string) {
@@ -639,16 +752,25 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json(405, { ok: false, error: "POST only" });
 
+  let body: Record<string, any>;
+  try { body = await req.json(); } catch { return json(400, { ok: false, error: "Invalid request." }); }
+
+  // pg_cron: start due scheduled campaigns (shared secret, no user session).
+  if (body.action === "run_scheduled") {
+    const secret = (req.headers.get("x-ikris-secret") ?? "").trim();
+    const expected = await setting("ingest_secret");
+    if (!secret || !expected || secret !== expected) return json(401, { ok: false, error: "unauthorized" });
+    try { return json(200, await runScheduled()); } catch (e) { console.error(e); return json(500, { ok: false, error: "Server error." }); }
+  }
+
   const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (!token) return json(401, { ok: false, code: "UNAUTHORIZED", error: "Session is not valid." });
   const { data: auth, error: authErr } = await admin.auth.getUser(token);
   if (authErr || !auth?.user?.email) return json(401, { ok: false, code: "UNAUTHORIZED", error: "Session is not valid." });
   const email = auth.user.email.toLowerCase();
   const { data: staffRow } = await admin.from("chat_staff").select("*").eq("email", email).maybeSingle();
   if (!staffRow) return json(403, { ok: false, code: "FORBIDDEN", error: "Your account has no WhatsApp access." });
   const staff = { ...staffRow, departments: staffRow.departments ?? [] } as Staff;
-
-  let body: Record<string, any>;
-  try { body = await req.json(); } catch { return json(400, { ok: false, error: "Invalid request." }); }
 
   try {
     switch (body.action) {
@@ -658,6 +780,8 @@ Deno.serve(async (req) => {
       case "edit_template": return json(200, await editTemplate(staff, body.template ?? {}));
       case "send_campaign": return json(200, await sendCampaign(staff, body, token));
       case "send_template": return json(200, await sendTemplateToChat(staff, body, token));
+      case "cancel_campaign": return json(200, await cancelCampaign(staff, body));
+      case "reschedule_campaign": return json(200, await rescheduleCampaign(staff, body));
       default: return json(400, { ok: false, error: "Unknown action." });
     }
   } catch (e) {
