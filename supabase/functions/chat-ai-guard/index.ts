@@ -9,6 +9,9 @@
 //  POST { action: "claim_send", phone, epoch }
 //     → immediately before the AI reply is sent to WhatsApp (atomic)
 //     → { ok, allowed, reason }
+//  POST { action: "campaign_button", phone, context_id, choice: "details"|"stop" }
+//     → a doctor tapped a campaign quick-reply button; "stop" marks the
+//       contact Opted out → { ok, template_name, name }
 //  A reply is allowed only if the chat is still AI_ACTIVE and nobody took
 //  it over since "check" (same epoch). See migrations 009-011.
 //
@@ -34,6 +37,18 @@ Deno.serve(async (req) => {
   const phone = String(b.phone ?? "").replace(/\D/g, "");
   if (phone.length < 6) return json(400, { ok: false, error: "phone is required" });
   const action = String(b.action ?? "");
+  // Campaign quick-reply buttons ("Get details" / "Stop messages"), migration 013.
+  if (action === "campaign_button") {
+    const choice = String(b.choice ?? "");
+    if (choice !== "details" && choice !== "stop") return json(400, { ok: false, error: "choice must be details or stop" });
+    const { data, error } = await admin.rpc("chat_campaign_button", {
+      p_secret: secret, p_phone: phone, p_context_id: String(b.context_id ?? "").slice(0, 200), p_choice: choice,
+    });
+    if (error) return json(500, { ok: false, error: error.message });
+    const out = (data ?? {}) as Record<string, unknown>;
+    if (out.ok === false && out.error === "unauthorized") return json(401, out);
+    return json(200, out);
+  }
   if (action !== "check" && action !== "claim_send") return json(400, { ok: false, error: "action must be check or claim_send" });
   const epoch = Number.isInteger(Number(b.epoch)) && b.epoch !== null && b.epoch !== undefined ? Number(b.epoch) : -1; // missing epoch never matches → blocked
 
