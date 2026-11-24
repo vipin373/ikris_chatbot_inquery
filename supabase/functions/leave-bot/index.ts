@@ -152,7 +152,7 @@ async function notify(opts: {
   const s = await settings();
   const redirect = (s.leave_test_redirect || "").replace(/\D/g, "");
   const realTo = opts.phone;
-  const useSession = await inWindow(redirect || realTo);
+  const useSession = await inWindow(redirect && opts.role !== "hr" ? redirect : realTo);
   const { data: row, error } = await admin.from("leave_notifications").insert({
     leave_request_id: opts.requestId ?? null, employee_uuid: opts.employeeUuid ?? null, recipient_role: opts.role, kind: opts.kind,
     phone: realTo, method: useSession ? "session" : "template", template_name: useSession ? null : opts.tpl.name,
@@ -162,11 +162,14 @@ async function notify(opts: {
   return { ...out, notification_id: row.id };
 }
 
-/** Test mode (chat_settings.leave_test_redirect): every outgoing message goes to the test number, labelled. */
-function applyRedirect(list: Out[], redirect: string): Out[] {
+/**
+ * Test mode (chat_settings.leave_test_redirect): messages meant for managers go to the test number (labelled),
+ * so one phone can be employee + manager. HR messages still go to the real HR number.
+ */
+function applyRedirect(list: Out[], redirect: string, hr: string): Out[] {
   if (!redirect) return list;
   return list.map((o) => {
-    if (o.to === redirect) return o;
+    if (o.to === redirect || (hr && o.to === hr)) return o;
     const p = JSON.parse(JSON.stringify(o.payload));
     const label = `[TEST - meant for +${o.to}]\n\n`;
     if (p.type === "text") p.text.body = (label + p.text.body).slice(0, 4096);
@@ -427,7 +430,7 @@ async function route(secret: string, body: any) {
   if (messages === null) return { handled: false };
   await admin.from("leave_inbound").upsert({ phone, last_in_at: new Date().toISOString() });
   const s = await settings();
-  return { handled: true, messages: applyRedirect(messages, (s.leave_test_redirect || "").replace(/\D/g, "")) };
+  return { handled: true, messages: applyRedirect(messages, (s.leave_test_redirect || "").replace(/\D/g, ""), (s.leave_hr_whatsapp || "").replace(/\D/g, "")) };
 }
 
 Deno.serve(async (req) => {
