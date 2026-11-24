@@ -1206,3 +1206,48 @@ td.is-bad, .num.is-bad { color: var(--error); font-weight: 600; }
   .integ-kv > div { grid-template-columns: 96px minmax(0, 1fr); }
   .usage-custom { flex-basis: 100%; }
 }
+
+/* ---------- Employee & Leave Management (HR + admins) ---------- */
+.view--hr .ct-main { gap: 16px; }
+.hr-add { flex: 0 0 auto !important; margin-left: auto; }
+.hr-add__sp, .hr-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.hr-add__sp { visibility: hidden; }
+.hr-add .btn svg { width: 16px; height: 16px; }
+.hr-table td { vertical-align: top; }
+.hr-table tr.is-muted td { color: var(--muted); }
+.hr-table .nowrap, .hr-mini .nowrap { white-space: nowrap; }
+.hr-reason { min-width: 160px; max-width: 260px; white-space: normal !important; }
+.hr-actions { white-space: nowrap; }
+.hr-actions .link + .link { margin-left: 10px; }
+.hr-link-danger { color: var(--error) !important; }
+.hr-missing { color: var(--error); font-size: 12.5px; }
+.hr-click { cursor: pointer; }
+.hr-click:hover td, .hr-click:focus-visible td { background: var(--navy-50); }
+.hr-click:focus-visible { outline: 2px solid var(--navy); outline-offset: -2px; }
+.hr-flagdot { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: var(--warning-bg); color: var(--warning-text); font-size: 11px; font-weight: 700; cursor: help; vertical-align: 1px; }
+.hr-flag { background: var(--warning-bg); color: var(--warning-text); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+.hr-note { display: flex; gap: 8px; align-items: center; margin: 0; padding: 10px 20px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-2); background: var(--bg); }
+.modal__body .hr-note { border: 0; border-radius: var(--radius-sm); padding: 10px 12px; margin-top: 12px; }
+.hr-note svg { width: 16px; height: 16px; flex: none; color: var(--navy); }
+.hr-mgr { margin-top: 8px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--wa-soft); font-size: 13px; color: var(--text); }
+.req { color: var(--error); }
+.hr-dl { display: grid; grid-template-columns: minmax(120px, 34%) 1fr; gap: 8px 14px; margin: 0; font-size: 13.5px; }
+.hr-dl dt { color: var(--muted); }
+.hr-dl dd { margin: 0; color: var(--text); word-break: break-word; }
+.hr-h3 { font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 18px 0 8px; }
+.hr-audit { margin: 0; padding-left: 18px; display: grid; gap: 8px; font-size: 13px; }
+.hr-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; margin: 0 6px 6px 0; }
+.hr-mini th, .hr-mini td { font-size: 12.5px; }
+.hr-danger { background: var(--error); color: var(--white); border-color: var(--error); }
+.hr-danger:hover { filter: brightness(.95); }
+@media (max-width: 640px) {
+  .hr-add { margin-left: 0; flex: 1 1 100% !important; }
+  .hr-add .btn { width: 100%; justify-content: center; }
+  .hr-add__sp { display: none; }
+  .hr-dl { grid-template-columns: 1fr; gap: 2px; }
+  .hr-dl dd { margin-bottom: 8px; }
+  .view--hr .cmp-tabs { width: 100%; overflow-x: auto; }
+}
+.hr-table th { white-space: nowrap; padding-right: 18px; }
+.hr-table td { padding-right: 18px; }
+#emp-f-id { text-transform: uppercase; }
