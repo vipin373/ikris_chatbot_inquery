@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css?v=20261104c">
+  <link rel="stylesheet" href="style.css?v=20261124a">
   <link rel="stylesheet" href="theme.css?v=20261104c">
 </head>
 <body>
@@ -188,6 +188,8 @@
         <button type="button" class="nav__item" data-nav="campaigns" data-tip="Campaigns"><svg aria-hidden="true"><use href="#i-megaphone"/></svg><span class="nav__text">Campaigns</span></button>
         <button type="button" class="nav__item" data-nav="inquiries" data-tip="Department Inquiries"><svg aria-hidden="true"><use href="#i-list"/></svg><span class="nav__text">Department Inquiries</span><span class="nav__badge" data-new-count hidden></span></button>
         <button type="button" class="nav__item" data-nav="analytics" data-tip="Analytics"><svg aria-hidden="true"><use href="#i-chart"/></svg><span class="nav__text">Analytics</span></button>
+        <button type="button" class="nav__item" data-nav="employees" hidden data-tip="Employee Management"><svg aria-hidden="true"><use href="#i-users"/></svg><span class="nav__text">Employee Management</span><span class="nav__badge" data-emp-flags hidden></span></button>
+        <button type="button" class="nav__item" data-nav="leave" hidden data-tip="Leave Management"><svg aria-hidden="true"><use href="#i-clock"/></svg><span class="nav__text">Leave Management</span><span class="nav__badge" data-leave-pending hidden></span></button>
         <button type="button" class="nav__item" data-nav="integrations" hidden data-tip="API Integrations"><svg aria-hidden="true"><use href="#i-plug"/></svg><span class="nav__text">API Integrations</span></button>
         <p class="nav__label">Account</p>
         <button type="button" class="nav__item" data-nav="settings" data-tip="Settings"><svg aria-hidden="true"><use href="#i-settings"/></svg><span class="nav__text">Settings</span></button>
@@ -741,6 +743,60 @@ Content-Type: application/json
           </div>
         </section>
 
+        <!-- ===== VIEW: EMPLOYEE MANAGEMENT (HR + admins) ===== -->
+        <section class="view view--hr" data-view="employees" hidden>
+          <div class="notice notice--info" id="emp-noaccess" hidden>Employee Management is available to HR and administrators only.</div>
+          <div class="ct-main" id="emp-main">
+            <div class="kpis" id="emp-kpis" aria-live="polite"></div>
+            <section class="card card--flush">
+              <div class="ct-toolbar">
+                <div class="filter ct-search-f"><label for="emp-search">Search</label>
+                  <div class="search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="emp-search" type="search" placeholder="Employee name, ID or WhatsApp number" autocomplete="off"></div></div>
+                <div class="filter"><label for="emp-status">Status</label>
+                  <select id="emp-status"><option value="">All employees</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="flag">Needs HR attention</option></select></div>
+                <div class="filter hr-add"><span class="hr-add__sp" aria-hidden="true">&nbsp;</span>
+                  <button type="button" class="btn btn--wa btn--sm" id="emp-add"><svg aria-hidden="true"><use href="#i-plus"/></svg>ADD NEW EMPLOYEE</button></div>
+              </div>
+              <div class="table-wrap">
+                <table class="table hr-table">
+                  <thead><tr><th>Employee ID</th><th>Employee Name</th><th>WhatsApp Number</th><th>Designation</th><th>Reporting Manager</th><th>Manager WhatsApp</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody id="emp-rows"></tbody>
+                </table>
+              </div>
+              <div class="ct-pager"><span class="muted small" id="emp-info"></span><button type="button" class="btn btn--outline btn--sm" id="emp-refresh"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Refresh</button></div>
+            </section>
+          </div>
+        </section>
+
+        <!-- ===== VIEW: LEAVE MANAGEMENT (HR + admins, view only) ===== -->
+        <section class="view view--hr" data-view="leave" hidden>
+          <div class="notice notice--info" id="lv-noaccess" hidden>Leave Management is available to HR and administrators only.</div>
+          <div class="ct-main" id="lv-main">
+            <div class="kpis" id="lv-kpis" aria-live="polite"></div>
+            <section class="card card--flush">
+              <div class="ct-toolbar">
+                <div class="filter"><span class="hr-label">Status</span>
+                  <div class="cmp-tabs" role="tablist" aria-label="Leave status">
+                    <button type="button" role="tab" class="cmp-tab" data-lv-tab="" aria-selected="true">All</button>
+                    <button type="button" role="tab" class="cmp-tab" data-lv-tab="PENDING" aria-selected="false">Pending</button>
+                    <button type="button" role="tab" class="cmp-tab" data-lv-tab="APPROVED" aria-selected="false">Approved</button>
+                    <button type="button" role="tab" class="cmp-tab" data-lv-tab="REJECTED" aria-selected="false">Rejected</button>
+                  </div></div>
+                <div class="filter ct-search-f"><label for="lv-search">Search</label>
+                  <div class="search"><svg aria-hidden="true"><use href="#i-search"/></svg><input id="lv-search" type="search" placeholder="Employee name, employee ID or request ID" autocomplete="off"></div></div>
+              </div>
+              <p class="hr-note"><svg aria-hidden="true"><use href="#i-shield"/></svg>Leave is approved or rejected only by the employee's reporting manager on WhatsApp. This page is view-only.</p>
+              <div class="table-wrap">
+                <table class="table hr-table">
+                  <thead><tr><th>Request ID</th><th>Employee ID</th><th>Employee Name</th><th>Designation</th><th>Reporting Manager</th><th>From Date</th><th>To Date</th><th>Reason</th><th>Application Date</th><th>Status</th><th>Rejection Reason</th><th>Decision Time</th></tr></thead>
+                  <tbody id="lv-rows"></tbody>
+                </table>
+              </div>
+              <div class="ct-pager"><span class="muted small" id="lv-info"></span><button type="button" class="btn btn--outline btn--sm" id="lv-refresh"><svg aria-hidden="true"><use href="#i-refresh"/></svg>Refresh</button></div>
+            </section>
+          </div>
+        </section>
+
         <!-- ===== VIEW: SETTINGS ===== -->
         <section class="view" data-view="settings" hidden>
           <div class="grid grid--settings">
@@ -1080,6 +1136,81 @@ Content-Type: application/json
     </form>
   </div>
 
+  <!-- ============ EMPLOYEE / LEAVE DIALOGS (HR + admins) ============ -->
+  <div class="drawer-scrim" id="hr-scrim" hidden></div>
+  <div class="modal" id="emp-dialog" role="dialog" aria-modal="true" aria-labelledby="emp-dialog-title" hidden>
+    <form class="modal__card ct-card" id="emp-form" novalidate>
+      <header class="modal__head">
+        <div><h2 id="emp-dialog-title">Add New Employee</h2><p class="card__sub" id="emp-f-meta"></p></div>
+        <button type="button" class="icon-btn" data-hr-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <div class="modal__body">
+        <div class="field__pair">
+          <div class="field"><label for="emp-f-id">Employee ID <span class="req">*</span></label><input id="emp-f-id" autocomplete="off" maxlength="20" placeholder="e.g. IK082" required></div>
+          <div class="field"><label for="emp-f-name">Employee Full Name <span class="req">*</span></label><input id="emp-f-name" autocomplete="off" maxlength="120" required></div>
+        </div>
+        <div class="field">
+          <label for="emp-f-phone">WhatsApp Number <span class="req">*</span></label>
+          <div class="ct-phone">
+            <div class="ct-code"><span>+</span><input id="emp-f-code" inputmode="numeric" maxlength="4" aria-label="Country code" value="91"></div>
+            <input id="emp-f-phone" inputmode="tel" placeholder="98765 43210" autocomplete="off" required>
+          </div>
+          <span class="field__hint">The number the employee uses on WhatsApp. It is their identity for leave requests.</span>
+        </div>
+        <div class="field"><label for="emp-f-desig">Designation <span class="req">*</span></label><input id="emp-f-desig" autocomplete="off" maxlength="120" required></div>
+        <div class="field">
+          <label for="emp-f-mgr">Reporting Manager <span class="req">*</span></label>
+          <select id="emp-f-mgr" required></select>
+          <div class="hr-mgr" id="emp-f-mgrinfo" hidden></div>
+          <span class="field__hint">Only active employees can be selected. If the manager is missing, add the manager first.</span>
+        </div>
+        <div class="field" id="emp-f-status-wrap"><label for="emp-f-status">Employee Status</label>
+          <select id="emp-f-status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+        <div class="hr-flag" id="emp-f-flag" hidden></div>
+        <p class="chat-assign__msg is-error" id="emp-f-msg" role="alert"></p>
+      </div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--ghost btn--sm" data-hr-close>Cancel</button>
+        <button type="submit" class="btn btn--wa btn--sm" id="emp-save"><span class="btn__label">SAVE EMPLOYEE</span></button>
+      </footer>
+    </form>
+  </div>
+
+  <div class="modal" id="emp-view" role="dialog" aria-modal="true" aria-labelledby="emp-view-title" hidden>
+    <div class="modal__card modal__card--mid">
+      <header class="modal__head">
+        <div><h2 id="emp-view-title">Employee</h2><p class="card__sub" id="emp-view-sub"></p></div>
+        <button type="button" class="icon-btn" data-hr-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <div class="modal__body" id="emp-view-body"></div>
+      <footer class="modal__foot" id="emp-view-foot"></footer>
+    </div>
+  </div>
+
+  <div class="modal" id="emp-confirm" role="alertdialog" aria-modal="true" aria-labelledby="emp-confirm-title" hidden>
+    <div class="modal__card">
+      <header class="modal__head"><h2 id="emp-confirm-title">Deactivate employee</h2>
+        <button type="button" class="icon-btn" data-hr-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button></header>
+      <div class="modal__body"><p id="emp-confirm-text">Are you sure you want to deactivate this employee?</p>
+        <p class="muted small">The record is kept. They can no longer apply for leave on WhatsApp. Existing leave requests and history stay unchanged.</p>
+        <p class="chat-assign__msg is-error" id="emp-confirm-msg" role="alert"></p></div>
+      <footer class="modal__foot">
+        <button type="button" class="btn btn--ghost btn--sm" data-hr-close>Cancel</button>
+        <button type="button" class="btn btn--sm hr-danger" id="emp-confirm-yes"><span class="btn__label">Yes, deactivate</span></button>
+      </footer>
+    </div>
+  </div>
+
+  <div class="modal" id="lv-view" role="dialog" aria-modal="true" aria-labelledby="lv-view-title" hidden>
+    <div class="modal__card modal__card--mid">
+      <header class="modal__head">
+        <div><h2 id="lv-view-title">Leave request</h2><p class="card__sub" id="lv-view-sub"></p></div>
+        <button type="button" class="icon-btn" data-hr-close aria-label="Close"><svg aria-hidden="true"><use href="#i-close"/></svg></button>
+      </header>
+      <div class="modal__body" id="lv-view-body"></div>
+    </div>
+  </div>
+
   <!-- ============ TOASTS ============ -->
   <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
@@ -1091,7 +1222,8 @@ Content-Type: application/json
   <script src="contacts.js?v=20261104c"></script>
   <script src="campaigns.js?v=20261104c"></script>
   <script src="integrations.js?v=20261104c"></script>
-  <script src="app.js?v=20261104c"></script>
+  <script src="hr.js?v=20261124a"></script>
+  <script src="app.js?v=20261124a"></script>
   <script src="ui.js?v=20261104c"></script>
 </body>
 </html>

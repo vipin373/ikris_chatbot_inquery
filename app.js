@@ -227,6 +227,8 @@
     inquiries: 'Department Inquiries',
     analytics: 'Analytics',
     integrations: 'API Integration Center',
+    employees: 'Employee Management',
+    leave: 'Leave Management',
     settings: 'Settings'
   };
 
@@ -278,6 +280,7 @@
       if (view === 'campaigns' && window.IkrisCampaigns) window.IkrisCampaigns.onShow();
       if (view === 'integrations' && window.IkrisIntegrations) window.IkrisIntegrations.onShow();
       if (view === 'contacts' && window.IkrisContacts) window.IkrisContacts.onShow();
+      if ((view === 'employees' || view === 'leave') && window.IkrisHR) window.IkrisHR.onShow(view);
       document.body.classList.toggle('is-chat-view', view === 'chat');
       Charts.renderFor(view);
       $('#content').scrollTop = 0;
@@ -1623,6 +1626,7 @@
       if (window.IkrisCampaigns) window.IkrisCampaigns.start(user);
       if (window.IkrisIntegrations) window.IkrisIntegrations.start(user);
       if (window.IkrisContacts) window.IkrisContacts.start(user);
+      if (window.IkrisHR) window.IkrisHR.start(user);
       Data.refresh().finally(() => { if (State.user) Poller.start(); });
     },
 
@@ -1633,6 +1637,7 @@
       if (window.IkrisCampaigns) window.IkrisCampaigns.stop();
       if (window.IkrisIntegrations) window.IkrisIntegrations.stop();
       if (window.IkrisContacts) window.IkrisContacts.stop();
+      if (window.IkrisHR) window.IkrisHR.stop();
       $$('[data-chat-unread]').forEach((el) => { el.hidden = true; });
       document.body.classList.remove('is-chat-view');
       Drawer.close();
@@ -1769,6 +1774,14 @@
       }
       if (window.IkrisCampaigns) {
         window.IkrisCampaigns.init({
+          client: () => Auth.client,
+          toast: (opts) => Notify.toast(opts),
+          showView: (v) => UI.showView(v),
+          isViewing: (v) => State.view === v
+        });
+      }
+      if (window.IkrisHR) {
+        window.IkrisHR.init({
           client: () => Auth.client,
           toast: (opts) => Notify.toast(opts),
           showView: (v) => UI.showView(v),
