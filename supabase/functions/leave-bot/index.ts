@@ -79,6 +79,24 @@ function parseDate(input: string): string | null {
   if (!/\d{4}|\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2}/.test(t) && (today.getTime() - dt.getTime()) > 60 * 86400_000) dt.setFullYear(dt.getFullYear() + 1);
   return ymd(dt);
 }
+/** "26 Nov to 28 Nov", "26-28 Nov", "26 to 28 Nov", "26/11 - 28/11", "from 26 Nov till 28 Nov" → [from, to] or null. */
+function parseRange(input: string): [string, string] | null {
+  const t = input.toLowerCase().replace(/(\d)(st|nd|rd|th)\b/g, "$1").replace(/[,]/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/^(from|leave from|leave)\s+/, "");
+  let m = t.match(/^(\d{1,2})\s*[-–]\s*(\d{1,2})\s+([a-z]{3,9}\.?(?:\s+\d{2,4})?)$/);           // 26-28 nov (2026)
+  if (m) { const a = parseDate(`${m[1]} ${m[3]}`), b = parseDate(`${m[2]} ${m[3]}`); return a && b ? [a, b] : null; }
+  m = t.match(/^(.+?)\s*(?:\bto\b|\btill\b|\buntil\b|\bse\b|–|—|\s-\s)\s*(.+)$/);
+  if (!m) return null;
+  const right = m[2].replace(/\s+(tak|tk)$/, "");
+  const b = parseDate(right);
+  if (!b) return null;
+  let a = parseDate(m[1]);
+  if (!a && /^\d{1,2}$/.test(m[1].trim())) {                                  // "26 to 28 nov" → day only on the left
+    const [y, mo] = b.split("-");
+    a = parseDate(`${m[1].trim()}/${mo}/${y}`);
+  }
+  return a ? [a, b] : null;
+}
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400_000);
 
 // ---------- WhatsApp payloads ----------
@@ -237,17 +255,26 @@ async function continueApply(secret: string, phone: string, sess: any, msg: { te
   const emp = who.employee;
 
   if (sess.step === "from") {
-    const from = parseDate(t);
-    if (!from) return [text(phone, "Sorry, I couldn't read that date. Please send the start date like *26/11/2026* or *26 Nov*.")];
+    const range = parseRange(t);
+    const from = range ? range[0] : parseDate(t.replace(/^(from)\s+/i, ""));
+    if (!from) return [text(phone, "Sorry, I couldn't read that date. Please send the start date like *26/11/2026* or *26 Nov* (or both dates, like *26 Nov to 28 Nov*).")];
     const today = ymd(istNow());
     if (daysBetween(today, from) < -30) return [text(phone, "That date is more than 30 days in the past. Please send the start date of your leave again, or contact HR.")];
     if (daysBetween(today, from) > 365) return [text(phone, "That date is more than a year away. Please check and send the start date again.")];
     d.from = from;
+    if (range) {
+      const to = range[1];
+      if (to < from) return [text(phone, `The end date (${fmtDate(to)}) cannot be earlier than the start date (${fmtDate(from)}). Please send the dates again, like *26 Nov to 28 Nov*.`)];
+      if (daysBetween(from, to) > 90) return [text(phone, "That is more than 90 days of leave. Please check the dates, or contact HR for long leave.")];
+      d.to = to;
+      await saveSession(phone, "apply", "reason", d);
+      return [text(phone, `From date: *${fmtDate(from)}* ✅\nTo date: *${fmtDate(to)}* ✅\n\nPlease share the reason for your leave.`)];
+    }
     await saveSession(phone, "apply", "to", d);
     return [text(phone, `From date: *${fmtDate(from)}* ✅\n\nPlease tell me the date until which you want to apply for leave.`)];
   }
   if (sess.step === "to") {
-    const to = parseDate(t);
+    const to = parseDate(t.replace(/^(to|till|until)\s+/i, "").replace(/\s+(tak|tk)$/i, ""));
     if (!to) return [text(phone, "Sorry, I couldn't read that date. Please send the end date like *27/11/2026* or *27 Nov*.")];
     if (to < d.from) return [text(phone, `The end date cannot be earlier than the start date (${fmtDate(d.from)}). Please tell me the date until which you want to apply for leave.`)];
     if (daysBetween(d.from, to) > 90) return [text(phone, "That is more than 90 days of leave. Please check the end date, or contact HR for long leave.")];
